@@ -1,0 +1,14 @@
+{
+  "name": "ankiterm",
+  "module": "index.js",
+  "scripts": {
+    "dev": "ls index.js | entr -c bun run index.js"
+  },
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
