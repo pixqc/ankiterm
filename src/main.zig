@@ -1,4 +1,5 @@
 const std = @import("std");
+const print = std.debug.print;
 
 const SRSAlgo = enum {
     sm2,
@@ -58,9 +59,11 @@ const default_units = blk: {
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
-
     for (default_units) |unit| {
-        try std.json.stringify(unit, .{}, stdout);
+        switch (unit) {
+            .card => try std.json.stringify(unit.card, .{}, stdout),
+            .review => try std.json.stringify(unit.review, .{}, stdout),
+        }
         try stdout.writeByte('\n');
     }
 }
