@@ -1,18 +1,30 @@
 const std = @import("std");
 
-const SRSAlgo = enum { SM2 };
+const SRSAlgo = enum {
+    sm2,
+    // fsrs tonite king?
+    // https://github.com/open-spaced-repetition/fsrs4anki/wiki/The-Algorithm
+
+    pub fn toString(self: SRSAlgo) []const u8 {
+        return switch (self) {
+            .sm2 => "sm2",
+        };
+    }
+};
 
 const Card = struct {
+    type: []const u8 = "card",
+    id: u32,
     front: []const u8,
     back: []const u8,
-    id: u32,
 };
 
 const Review = struct {
+    type: []const u8 = "review",
     id: u32,
     card_id: u32,
     difficulty_rating: u8,
-    timestamp: u32,
+    timestamp: u64,
     algo: SRSAlgo,
 };
 
@@ -21,42 +33,34 @@ pub const StudyUnit = union(enum) {
     review: Review,
 };
 
-fn init_study_units() [6]StudyUnit {
-    const cards = [_]Card{
-        .{ .front = "2^8", .back = "256", .id = 1 },
-        .{ .front = "bocchi band is called", .back = "kessoku", .id = 2 },
-        .{ .front = "what's a symlink (unix)", .back = "pointer to file/dir", .id = 3 },
-    };
-    const reviews = [_]Review{
-        .{ .id = 1, .card_id = 1, .difficulty_rating = 5, .timestamp = 1718949322, .algo = .SM2 },
-        .{ .id = 2, .card_id = 2, .difficulty_rating = 0, .timestamp = 1718949322, .algo = .SM2 },
-        .{ .id = 3, .card_id = 3, .difficulty_rating = 3, .timestamp = 1718949322, .algo = .SM2 },
-    };
+const default_cards = [_]Card{
+    .{ .id = 1, .front = "2^8", .back = "256" },
+    .{ .id = 2, .front = "what is string in zig", .back = "pointer to null-terminated u8 array" },
+    .{ .id = 3, .front = "what is a symlink file", .back = "pointer to file/dir" },
+};
 
-    comptime {
-        std.debug.assert(cards.len == reviews.len);
+const default_reviews = [_]Review{
+    .{ .id = 1, .card_id = 1, .difficulty_rating = 5, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
+    .{ .id = 2, .card_id = 2, .difficulty_rating = 0, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
+    .{ .id = 3, .card_id = 3, .difficulty_rating = 3, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
+};
+
+const default_units = blk: {
+    var units: [default_cards.len + default_reviews.len]StudyUnit = undefined;
+    for (default_cards, 0..) |card, i| {
+        units[i] = .{ .card = card };
     }
-
-    return comptime blk: {
-        var units: [cards.len + reviews.len]StudyUnit = undefined;
-        for (cards, 0..) |card, i| {
-            units[i] = .{ .card = card };
-            units[i + cards.len] = .{ .review = reviews[i] };
-        }
-        break :blk units;
-    };
-}
-
-fn print_unit(unit: StudyUnit, writer: anytype) !void {
-    try std.json.stringify(unit, .{}, writer);
-    try writer.writeByte('\n');
-}
+    for (default_reviews, 0..) |review, i| {
+        units[default_cards.len + i] = .{ .review = review };
+    }
+    break :blk units;
+};
 
 pub fn main() !void {
-    const study_units = init_study_units();
     const stdout = std.io.getStdOut().writer();
 
-    for (study_units) |unit| {
-        try print_unit(unit, stdout);
+    for (default_units) |unit| {
+        try std.json.stringify(unit, .{}, stdout);
+        try stdout.writeByte('\n');
     }
 }
