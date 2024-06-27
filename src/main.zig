@@ -85,7 +85,39 @@ fn init_deck(filename: []const u8) !void {
     std.debug.print("Successfully wrote {d} bytes to {s}.\n", .{ file_size, filename });
 }
 
+pub fn review_deck(filename: []const u8) !void {
+    const cwd = std.fs.cwd();
+    const file = try cwd.openFile(filename, .{});
+    defer file.close();
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const file_contents = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
+    defer allocator.free(file_contents);
+
+    var lines = std.mem.split(u8, file_contents, "\n");
+    while (lines.next()) |line| {
+        if (line.len == 0) continue; // Skip empty lines
+
+        std.debug.print("line: {s}\n", .{line});
+        var parsed = try std.json.parseFromSlice(std.json.Value, allocator, line, .{});
+        defer parsed.deinit();
+
+        const root = parsed.value.object;
+        const type_str = root.get("type").?.string;
+        std.debug.print("type_str: {s}\n", .{type_str});
+        // TODO: parse to struct
+    }
+}
+
 pub fn main() !void {
+    // playground
+    if (true) {
+        try review_deck("hi.ndjson");
+        return;
+    }
     const stdout = std.io.getStdOut().writer();
     const help =
         \\Usage: {s} <command> <filename> [options] [arguments]
@@ -100,13 +132,12 @@ pub fn main() !void {
         \\  --version               Show version information and exit
     ;
 
-    var arg: []const u8 = undefined;
     if (std.os.argv.len < 2) {
         try stdout.print("{s}", .{help});
         return;
     }
 
-    arg = std.mem.span(std.os.argv[1]);
+    const arg: []const u8 = std.mem.span(std.os.argv[1]);
     if (std.mem.eql(u8, arg, "init")) {
         if (std.os.argv.len < 3) {
             try stdout.print("Error: 'init' command requires a filename.\n", .{});
@@ -115,6 +146,34 @@ pub fn main() !void {
         }
         const filename = std.mem.span(std.os.argv[2]);
         try init_deck(filename);
+    } else if (std.mem.eql(u8, arg, "review")) {
+        if (std.os.argv.len < 3) {
+            try stdout.print("Error: 'review' command requires a filename.\n", .{});
+            try stdout.print("Usage: {s} review <filename>\n", .{std.os.argv[0]});
+            return;
+        }
+        const filename = std.mem.span(std.os.argv[2]);
+        try review_deck(filename);
+    }
+    // else if (std.mem.eql(u8, arg, "stats")) {
+    //     if (std.os.argv.len < 3) {
+    //         try stdout.print("Error: 'stats' command requires a filename.\n", .{});
+    //         try stdout.print("Usage: {s} stats <filename>\n", .{std.os.argv[0]});
+    //         return;
+    //     }
+    //     const filename = std.mem.span(std.os.argv[2]);
+    //     try init(stdout);
+    // } else if (std.mem.eql(u8, arg, "tidy")) {
+    //     if (std.os.argv.len < 3) {
+    //         try stdout.print("Error: 'tidy' command requires a filename.\n", .{});
+    //         try stdout.print("Usage: {s} tidy <filename>\n", .{std.os.argv[0]});
+    //         return;
+    //     }
+    //     const filename = std.mem.span(std.os.argv[2]);
+    //     try init(stdout);
+    // }
+    else if (std.mem.eql(u8, arg, "--version")) {
+        try stdout.print("0.0.0\n", .{});
     } else if (std.mem.eql(u8, arg, "--help")) {
         try stdout.print(help, .{std.os.argv[0]});
     } else {
