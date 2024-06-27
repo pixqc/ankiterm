@@ -57,13 +57,68 @@ const default_units = blk: {
     break :blk units;
 };
 
-pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+fn init(stdout: @TypeOf(std.io.getStdOut().writer())) !void {
     for (default_units) |unit| {
         switch (unit) {
             .card => try std.json.stringify(unit.card, .{}, stdout),
             .review => try std.json.stringify(unit.review, .{}, stdout),
         }
         try stdout.writeByte('\n');
+    }
+}
+
+fn init_deck(filename: []const u8) !void {
+    const cwd: std.fs.Dir = std.fs.cwd();
+    const file: std.fs.File = try cwd.createFile(filename, .{});
+    defer file.close();
+    var buffered_writer = std.io.bufferedWriter(file.writer());
+    var writer = buffered_writer.writer();
+    for (default_units) |unit| {
+        switch (unit) {
+            .card => try std.json.stringify(unit.card, .{}, writer),
+            .review => try std.json.stringify(unit.review, .{}, writer),
+        }
+        try writer.writeByte('\n');
+    }
+    try buffered_writer.flush();
+    const file_size = try file.getEndPos();
+    std.debug.print("Successfully wrote {d} bytes to {s}.\n", .{ file_size, filename });
+}
+
+pub fn main() !void {
+    const stdout = std.io.getStdOut().writer();
+    const help =
+        \\Usage: {s} <command> <filename> [options] [arguments]
+        \\Commands:
+        \\  init <filename>         Initialize a new deck
+        \\  review <filename>       Review due cards
+        \\  stats <filename>        Show statistics
+        \\  tidy <filename>         Tidy up the deck
+        \\
+        \\Global Options:
+        \\  --help                  Show help message and exit
+        \\  --version               Show version information and exit
+    ;
+
+    var arg: []const u8 = undefined;
+    if (std.os.argv.len < 2) {
+        try stdout.print("{s}", .{help});
+        return;
+    }
+
+    arg = std.mem.span(std.os.argv[1]);
+    if (std.mem.eql(u8, arg, "init")) {
+        if (std.os.argv.len < 3) {
+            try stdout.print("Error: 'init' command requires a filename.\n", .{});
+            try stdout.print("Usage: {s} init <filename>\n", .{std.os.argv[0]});
+            return;
+        }
+        const filename = std.mem.span(std.os.argv[2]);
+        try init_deck(filename);
+    } else if (std.mem.eql(u8, arg, "--help")) {
+        try stdout.print(help, .{std.os.argv[0]});
+    } else {
+        try stdout.print("Unknown command: {s}\n", .{arg});
+        try stdout.print("Use '{s} --help' for usage information.\n", .{std.os.argv[0]});
     }
 }
