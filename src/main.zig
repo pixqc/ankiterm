@@ -32,11 +32,6 @@ const Review = struct {
     algo: SRSAlgo,
 };
 
-const Deck = union {
-    card: Card,
-    review: Review,
-};
-
 fn getDefaultDeck(allocator: std.mem.Allocator) ![]u8 {
     const cards = [_]Card{
         .{ .id = 1, .front = "2^8", .back = "256" },
@@ -88,14 +83,31 @@ pub fn main() !void {
 
     // SECTION: playground, for testing small code snippets ===================
 
-    if (false) {
-        // const deck = try getDefaultDeck();
-        // _ = try writeDeck("test.ndjson", deck);
-        // const deck2 = try readDeck("test.ndjson");
-        // print("{s}\n", .{deck});
-        // print("{s}\n", .{deck2});
-        //
+    if (true) {
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const allocator = arena.allocator();
         print("{s}\n", .{"hi playground"});
+
+        const raw = try getDefaultDeck(allocator);
+        var it = std.mem.tokenizeAny(u8, raw, "\n");
+        while (it.next()) |line| {
+            if (line.len == 0) {
+                continue;
+            }
+            const parsed = try std.json.parseFromSlice(std.json.Value, allocator, line, .{});
+            const root = parsed.value.object;
+            const typ = root.get("type").?.string;
+            print("{s}\n", .{typ});
+
+            if (std.mem.eql(u8, typ, "card")) {
+                const card = try std.json.parseFromSlice(Card, allocator, line, .{});
+                print("{any}\n", .{card.value});
+            } else if (std.mem.eql(u8, typ, "review")) {
+                const review = try std.json.parseFromSlice(Review, allocator, line, .{});
+                print("{any}\n", .{review.value});
+            }
+        }
         return;
     }
 
