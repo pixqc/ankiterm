@@ -208,4 +208,7 @@ test "inits properly" {
     var buf: [1024]u8 = undefined;
     const bytes_read = try file.readAll(&buf);
     try expect(bytes_written == bytes_read);
+
+    // cleanup
+    try cwd.deleteFile(filename);
 }
