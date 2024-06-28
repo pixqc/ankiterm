@@ -72,3 +72,5 @@ Alias `<youralias>` to `nvim ~/path/to/deck.ndjson` for quickly adding card.
 Alpha software, please reach out if it breaks: x.com/pixqc
 
 I am using this software daily, more improvements and stability coming soon!
+
+Extra: "Why bother doing spaced repetition?": https://gwern.net/spaced-repetition
