@@ -118,12 +118,16 @@ fn write_deck(filename: []const u8, deck: []u8) !usize {
 // }
 
 pub fn main() !void {
-    // playground
+
+    // SECTION: playground, for testing small code snippets ===================
+
     if (true) {
         const deck = try get_default_deck();
         try write_deck("test.ndjson", deck);
         print("{s}\n", .{deck});
     }
+
+    // SECTION: main ==========================================================
 
     const stdout = std.io.getStdOut().writer();
     const help =
@@ -188,22 +192,6 @@ pub fn main() !void {
         try stdout.print("Unknown command: {s}\n", .{arg});
         try stdout.print("Use '{s} --help' for usage information.\n", .{std.os.argv[0]});
     }
-}
-
-// SECTION: playground ========================================================
-
-fn mayError() !u8 {
-    var prng = std.rand.DefaultPrng.init(blk: {
-        var seed: u64 = undefined;
-        try std.posix.getrandom(std.mem.asBytes(&seed));
-        break :blk seed;
-    });
-    const rand = prng.random();
-    const isErr = rand.boolean();
-    if (isErr) {
-        return error.UnexpectedEof;
-    }
-    return rand.int(u8);
 }
 
 // use `zig test src/main.zig` to run small code in isolation
