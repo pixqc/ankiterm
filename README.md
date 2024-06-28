@@ -71,6 +71,6 @@ aws s3 cp deck.ndjson s3://mybucket/deck.ndjson
 
 Alias `<youralias>` to `nvim ~/path/to/deck.ndjson` for quickly adding card.
 
-Alpha software, please reach out if it breaks: x.com/pixqc
+Alpha software, please reach out if it breaks: https://x.com/pixqc
 
 I am using this software daily, more improvements and stability coming soon!
