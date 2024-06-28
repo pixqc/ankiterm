@@ -40,7 +40,7 @@ const Review = struct {
 
 fn getDefaultDeck(allocator: std.mem.Allocator) ![]u8 {
     const cards = [_]Card{
-        .{ .id = 1, .front = "2^8", .back = "256" },
+        .{ .id = 1, .front = "2^8 paewofjaopwejfaoweijf aowpejf oawej fpoawej fopaiwej fopaewj fopawej foapiwej foaiwej f", .back = "256" },
         .{ .id = 2, .front = "what is string in zig", .back = "pointer to null-terminated u8 array" },
         .{ .id = 3, .front = "what is a symlink file", .back = "pointer to file/dir" },
     };
@@ -65,7 +65,7 @@ fn getDefaultDeck(allocator: std.mem.Allocator) ![]u8 {
     return buf.toOwnedSlice();
 }
 
-fn writeDeck(filename: []const u8, deck: []u8) !usize {
+fn writeFile(filename: []const u8, raw: []u8) !usize {
     const cwd: std.fs.Dir = std.fs.cwd();
     const file: std.fs.File = try cwd.createFile(filename, .{});
     defer file.close();
@@ -73,7 +73,7 @@ fn writeDeck(filename: []const u8, deck: []u8) !usize {
     // flush to file
     var buffered_writer = std.io.bufferedWriter(file.writer());
     var writer = buffered_writer.writer();
-    const file_size = try writer.write(deck);
+    const file_size = try writer.write(raw);
     try buffered_writer.flush();
     return file_size;
 }
@@ -104,35 +104,81 @@ fn parseDeck(allocator: std.mem.Allocator, cards: *ArrayList(Card), reviews: *Ar
     }
 }
 
+// FIX: still broken
+pub fn wrapText(allocator: std.mem.Allocator, text: []const u8, line_length: usize) ![]u8 {
+    var result = std.ArrayList(u8).init(allocator);
+    errdefer result.deinit();
+    var line_start: usize = 0;
+    var last_space: ?usize = null;
+    var current_line_length: usize = 0;
+
+    for (text, 0..) |char, i| {
+        if (char == ' ') {
+            last_space = i;
+        }
+        current_line_length += 1;
+
+        if (current_line_length > line_length) {
+            if (last_space) |space| {
+                // trim trailing spaces
+                var end = space;
+                while (end > line_start and text[end - 1] == ' ') {
+                    end -= 1;
+                }
+                try result.appendSlice(text[line_start..end]);
+                try result.append('\n');
+                line_start = space + 1;
+                current_line_length = i - space;
+                last_space = null;
+            } else {
+                // if no space found, force wrap at line_length
+                try result.appendSlice(text[line_start..i]);
+                try result.append('\n');
+                line_start = i;
+                current_line_length = 0;
+            }
+        }
+    }
+
+    // handle remaining text
+    if (line_start < text.len) {
+        try result.appendSlice(text[line_start..]);
+    }
+
+    return result.toOwnedSlice();
+}
+
+pub fn reviewCard(allocator: std.mem.Allocator, card: Card, stdout: @TypeOf(std.io.getStdOut().writer())) !void {
+    const MAX_WIDTH = 60;
+    const wrapped_front = try wrapText(allocator, card.front, MAX_WIDTH);
+    defer allocator.free(wrapped_front);
+    const wrapped_back = try wrapText(allocator, card.back, MAX_WIDTH);
+    defer allocator.free(wrapped_back);
+
+    try stdout.writeAll("\n\n");
+    try stdout.writeByteNTimes('=', MAX_WIDTH);
+    try stdout.writeAll("\n");
+    try stdout.print("{s}\n", .{card.front});
+    try stdout.writeByteNTimes('-', MAX_WIDTH);
+    try stdout.writeAll("\n");
+    try stdout.print("{s}\n", .{card.back});
+    try stdout.writeByteNTimes('=', MAX_WIDTH);
+}
+
 pub fn main() !void {
 
     // SECTION: playground, for testing small code snippets ===================
 
-    if (false) {
+    if (true) {
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
         const allocator = arena.allocator();
         print("{s}\n", .{"hi playground"});
-
-        const raw = try getDefaultDeck(allocator);
-        var it = std.mem.tokenizeAny(u8, raw, "\n");
-        while (it.next()) |line| {
-            if (line.len == 0) {
-                continue;
-            }
-            const parsed = try std.json.parseFromSlice(std.json.Value, allocator, line, .{});
-            const root = parsed.value.object;
-            const typ = root.get("type").?.string;
-            print("{s}\n", .{typ});
-
-            if (std.mem.eql(u8, typ, "card")) {
-                const card = try std.json.parseFromSlice(Card, allocator, line, .{});
-                print("{any}\n", .{card.value});
-            } else if (std.mem.eql(u8, typ, "review")) {
-                const review = try std.json.parseFromSlice(Review, allocator, line, .{});
-                print("{any}\n", .{review.value});
-            }
-        }
+        const deck = try getDefaultDeck(allocator);
+        var cards = ArrayList(Card).init(allocator);
+        var reviews = ArrayList(Review).init(allocator);
+        try parseDeck(allocator, &cards, &reviews, deck);
+        try reviewCard(allocator, cards.items[0], std.io.getStdOut().writer());
         return;
     }
 
@@ -174,7 +220,7 @@ pub fn main() !void {
             // only write if file doens't exist
             error.FileNotFound => {
                 const deck = try getDefaultDeck(allocator);
-                const bytesWritten = try writeDeck(filename, deck);
+                const bytesWritten = try writeFile(filename, deck);
                 try stdout.print("Successfully wrote {d} bytes to {s}.\n", .{ bytesWritten, filename });
                 return;
             },
@@ -188,17 +234,14 @@ pub fn main() !void {
             try stdout.print("Usage: {s} review <filename>\n", .{std.os.argv[0]});
             return;
         }
-        // try stdout.print("TODO: impl this", .{});
         const filename = std.mem.span(std.os.argv[2]);
         const deck = try readDeck(allocator, filename);
         var cards = ArrayList(Card).init(allocator);
         var reviews = ArrayList(Review).init(allocator);
         try parseDeck(allocator, &cards, &reviews, deck);
-        for (cards.items()) |card| {
-            try stdout.print("{any}\n", .{card});
-        }
-        for (reviews.items()) |review| {
-            try stdout.print("{any}\n", .{review});
+        // reviewCards(&cards);
+        for (cards.items) |card| {
+            try reviewCard(card, stdout);
         }
     } else if (std.mem.eql(u8, arg, "--version")) {
         try stdout.print("0.0.0\n", .{});
@@ -219,7 +262,7 @@ test "inits properly" {
 
     const filename = "test.ndjson";
     const deck = try getDefaultDeck(allocator);
-    _ = try writeDeck(filename, deck);
+    _ = try writeFile(filename, deck);
 
     // read
     const file_content = try readDeck(allocator, filename);
