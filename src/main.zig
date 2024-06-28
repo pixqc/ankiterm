@@ -29,11 +29,6 @@ const Review = struct {
     algo: SRSAlgo,
 };
 
-pub const StudyUnit = union(enum) {
-    card: Card,
-    review: Review,
-};
-
 const default_cards = [_]Card{
     .{ .id = 1, .front = "2^8", .back = "256" },
     .{ .id = 2, .front = "what is string in zig", .back = "pointer to null-terminated u8 array" },
@@ -46,38 +41,18 @@ const default_reviews = [_]Review{
     .{ .id = 3, .card_id = 3, .difficulty_rating = 3, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
 };
 
-const default_units = blk: {
-    var units: [default_cards.len + default_reviews.len]StudyUnit = undefined;
-    for (default_cards, 0..) |card, i| {
-        units[i] = .{ .card = card };
-    }
-    for (default_reviews, 0..) |review, i| {
-        units[default_cards.len + i] = .{ .review = review };
-    }
-    break :blk units;
-};
-
-fn init(stdout: @TypeOf(std.io.getStdOut().writer())) !void {
-    for (default_units) |unit| {
-        switch (unit) {
-            .card => try std.json.stringify(unit.card, .{}, stdout),
-            .review => try std.json.stringify(unit.review, .{}, stdout),
-        }
-        try stdout.writeByte('\n');
-    }
-}
-
 fn init_deck(filename: []const u8) !void {
     const cwd: std.fs.Dir = std.fs.cwd();
     const file: std.fs.File = try cwd.createFile(filename, .{});
     defer file.close();
     var buffered_writer = std.io.bufferedWriter(file.writer());
     var writer = buffered_writer.writer();
-    for (default_units) |unit| {
-        switch (unit) {
-            .card => try std.json.stringify(unit.card, .{}, writer),
-            .review => try std.json.stringify(unit.review, .{}, writer),
-        }
+    for (default_cards) |card| {
+        try std.json.stringify(card, .{}, writer);
+        try writer.writeByte('\n');
+    }
+    for (default_reviews) |review| {
+        try std.json.stringify(review, .{}, writer);
         try writer.writeByte('\n');
     }
     try buffered_writer.flush();
@@ -101,6 +76,8 @@ pub fn review_deck(filename: []const u8) !void {
     while (lines.next()) |line| {
         if (line.len == 0) continue; // Skip empty lines
 
+        // TODO: try reading card, then catch with read review
+
         std.debug.print("line: {s}\n", .{line});
         var parsed = try std.json.parseFromSlice(std.json.Value, allocator, line, .{});
         defer parsed.deinit();
@@ -113,11 +90,6 @@ pub fn review_deck(filename: []const u8) !void {
 }
 
 pub fn main() !void {
-    // playground
-    if (true) {
-        try review_deck("hi.ndjson");
-        return;
-    }
     const stdout = std.io.getStdOut().writer();
     const help =
         \\Usage: {s} <command> <filename> [options] [arguments]
@@ -180,4 +152,26 @@ pub fn main() !void {
         try stdout.print("Unknown command: {s}\n", .{arg});
         try stdout.print("Use '{s} --help' for usage information.\n", .{std.os.argv[0]});
     }
+}
+
+// SECTION: playground ========================================================
+
+fn mayError() !u8 {
+    var prng = std.rand.DefaultPrng.init(blk: {
+        var seed: u64 = undefined;
+        try std.posix.getrandom(std.mem.asBytes(&seed));
+        break :blk seed;
+    });
+    const rand = prng.random();
+    const isErr = rand.boolean();
+    if (isErr) {
+        return error.UnexpectedEof;
+    }
+    return rand.int(u8);
+}
+
+// use `zig test src/main.zig` to run small code in isolation
+test "playground" {
+    const a = try mayError();
+    print("{any}\n", .{a});
 }
