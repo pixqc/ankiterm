@@ -31,7 +31,7 @@ const Review = struct {
     algo: SRSAlgo,
 };
 
-fn get_default_deck() ![]u8 {
+fn getDefaultDeck() ![]u8 {
     const cards = [_]Card{
         .{ .id = 1, .front = "2^8", .back = "256" },
         .{ .id = 2, .front = "what is string in zig", .back = "pointer to null-terminated u8 array" },
@@ -43,6 +43,7 @@ fn get_default_deck() ![]u8 {
         .{ .id = 3, .card_id = 3, .difficulty_rating = 3, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
     };
 
+    // create a buffer to write to
     var buf = std.ArrayList(u8).init(std.heap.page_allocator);
     defer buf.deinit();
     const writer = buf.writer();
@@ -57,10 +58,12 @@ fn get_default_deck() ![]u8 {
     return buf.toOwnedSlice();
 }
 
-fn write_deck(filename: []const u8, deck: []u8) !usize {
+fn writeDeck(filename: []const u8, deck: []u8) !usize {
     const cwd: std.fs.Dir = std.fs.cwd();
     const file: std.fs.File = try cwd.createFile(filename, .{});
     defer file.close();
+
+    // flush to file
     var buffered_writer = std.io.bufferedWriter(file.writer());
     var writer = buffered_writer.writer();
     const file_size = try writer.write(deck);
@@ -69,27 +72,14 @@ fn write_deck(filename: []const u8, deck: []u8) !usize {
     return file_size;
 }
 
-// pub fn read_deck(filename: []const u8) ![]u8 {
-//     const cwd = std.fs.cwd();
-//     const file = try cwd.openFile(filename, .{});
-//     defer file.close();
-//     const buf = try file.readAllAlloc(std.heap.page_allocator);
-//     const bytes_read = try file.readAll(&buf);
-//     // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-//     // defer arena.deinit();
-//     // const allocator = arena.allocator();
-//     // const file_contents = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
-//     // defer allocator.free(file_contents);
-//     // var lines = std.ArrayList([]const u8).init(allocator);
-//     // var iter = std.mem.split(u8, file_contents, "\n");
-//     // while (iter.next()) |line| {
-//     //     if (line.len > 0) {
-//     //         try lines.append(try allocator.dupe(u8, line));
-//     //     }
-//     // }
-//     // return lines;
-// }
-//
+pub fn readDeck(filename: []const u8) ![]u8 {
+    const cwd = std.fs.cwd();
+    const file = try cwd.openFile(filename, .{});
+    defer file.close();
+    const allocator = std.heap.page_allocator;
+    return try file.readToEndAlloc(allocator, std.math.maxInt(usize));
+}
+
 // pub fn review_deck(filename: []const u8) !void {
 //     // const cwd = std.fs.cwd();
 //     // const file = try cwd.openFile(filename, .{});
@@ -102,7 +92,7 @@ fn write_deck(filename: []const u8, deck: []u8) !usize {
 //     // defer allocator.free(file_contents);
 //     //
 //     // var lines = std.mem.split(u8, file_contents, "\n");
-//     var lines = read_deck(filename);
+//     var lines = readDeck(filename);
 //     while (lines.next()) |line| {
 //         if (line.len == 0) continue; // Skip empty lines
 //
@@ -122,9 +112,11 @@ pub fn main() !void {
     // SECTION: playground, for testing small code snippets ===================
 
     if (true) {
-        const deck = try get_default_deck();
-        try write_deck("test.ndjson", deck);
+        const deck = try getDefaultDeck();
+        _ = try writeDeck("test.ndjson", deck);
+        const deck2 = try readDeck("test.ndjson");
         print("{s}\n", .{deck});
+        print("{s}\n", .{deck2});
     }
 
     // SECTION: main ==========================================================
@@ -156,8 +148,8 @@ pub fn main() !void {
             return;
         }
         const filename = std.mem.span(std.os.argv[2]);
-        const deck = try get_default_deck();
-        try write_deck(filename, deck);
+        const deck = try getDefaultDeck();
+        _ = try writeDeck(filename, deck);
     } else if (std.mem.eql(u8, arg, "review")) {
         if (std.os.argv.len < 3) {
             try stdout.print("Error: 'review' command requires a filename.\n", .{});
@@ -198,17 +190,14 @@ pub fn main() !void {
 
 test "inits properly" {
     const filename = "test.ndjson";
-    const deck = try get_default_deck();
-    const bytes_written = try write_deck(filename, deck);
+    const deck = try getDefaultDeck();
+    _ = try writeDeck(filename, deck);
 
     // read
-    const cwd = std.fs.cwd();
-    const file = try cwd.openFile(filename, .{});
-    defer file.close();
-    var buf: [1024]u8 = undefined;
-    const bytes_read = try file.readAll(&buf);
-    try expect(bytes_written == bytes_read);
+    const file_content = try readDeck(filename);
+    try expect(std.mem.eql(u8, file_content, deck));
 
     // cleanup
+    const cwd = std.fs.cwd();
     try cwd.deleteFile(filename);
 }
