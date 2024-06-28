@@ -6,10 +6,12 @@ Guiding principle: data is plaintext, no external deps, unix philosophy. The nor
 
 Ankiterm currently implements the SM2 spaced repetition algorithm. Read more: https://archive.ph/lWz4N
 
+"Why bother doing spaced repetition?": https://gwern.net/spaced-repetition
+
 To install:
 
 ```
-npm i -g ankiterm
+not ready to be used yet, but soon!
 ```
 
 Ankiterm's commands:
@@ -38,14 +40,14 @@ deck.ndjson:
 
 ```
 // card data has the following format:
-{"type":"card","front":"2^8","back":"256","id":1}
-{"type":"card","front":"bocchi band is called","back":"kessoku","id":2}
-{"type":"card","front":"what's a symlink (unix)","back":"pointer to file/dir","id":3}
+{"type":"card","id":1,"front":"2^8","back":"256"}
+{"type":"card","id":2,"front":"what is string in zig","back":"pointer to null-terminated u8 array"}
+{"type":"card","id":3,"front":"what is a symlink file","back":"pointer to file/dir"}
 
 // review data has the following format:
-{"type":"review",id":1,"difficulty_rating":5,"timestamp":1718949322,"algo":"sm2"}
-{"type","review",id":2,"difficulty_rating":0,"timestamp":1718949322,"algo":"sm2"}
-{"type","review",id":3,"difficulty_rating":3,"timestamp":1718949322,"algo":"sm2"}
+{"type":"review","id":1,"card_id":1,"difficulty_rating":5,"timestamp":1718949322,"algo":"sm2"}
+{"type":"review","id":2,"card_id":2,"difficulty_rating":0,"timestamp":1718949322,"algo":"sm2"}
+{"type":"review","id":3,"card_id":3,"difficulty_rating":3,"timestamp":1718949322,"algo":"sm2"}
 ```
 
 The nice thing about plaintext: grep, sed, jq works:
@@ -72,5 +74,3 @@ Alias `<youralias>` to `nvim ~/path/to/deck.ndjson` for quickly adding card.
 Alpha software, please reach out if it breaks: x.com/pixqc
 
 I am using this software daily, more improvements and stability coming soon!
-
-Extra: "Why bother doing spaced repetition?": https://gwern.net/spaced-repetition
