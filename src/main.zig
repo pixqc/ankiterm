@@ -16,11 +16,17 @@ const SRSAlgo = enum {
     }
 };
 
+// LINGO:
+// - card: a flashcard item
+// - review: a review of a card
+// - deck: a collection of cards and reviews
+
 const Card = struct {
     type: []const u8 = "card",
     id: u32,
     front: []const u8,
     back: []const u8,
+    nextReview: ?u32 = null, // unix second
 };
 
 const Review = struct {
@@ -79,11 +85,30 @@ fn readDeck(allocator: std.mem.Allocator, filename: []const u8) ![]u8 {
     return try file.readToEndAlloc(allocator, std.math.maxInt(usize));
 }
 
+fn parseDeck(allocator: std.mem.Allocator, cards: *ArrayList(Card), reviews: *ArrayList(Review), raw: []u8) !void {
+    var it = std.mem.tokenizeAny(u8, raw, "\n");
+    while (it.next()) |line| {
+        if (line.len == 0) {
+            continue;
+        }
+        const parsed = try std.json.parseFromSlice(std.json.Value, allocator, line, .{});
+        const root = parsed.value.object;
+        const typ = root.get("type").?.string;
+        if (std.mem.eql(u8, typ, "card")) {
+            const card = try std.json.parseFromSlice(Card, allocator, line, .{});
+            try cards.append(card.value);
+        } else if (std.mem.eql(u8, typ, "review")) {
+            const review = try std.json.parseFromSlice(Review, allocator, line, .{});
+            try reviews.append(review.value);
+        }
+    }
+}
+
 pub fn main() !void {
 
     // SECTION: playground, for testing small code snippets ===================
 
-    if (true) {
+    if (false) {
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
         const allocator = arena.allocator();
@@ -163,7 +188,18 @@ pub fn main() !void {
             try stdout.print("Usage: {s} review <filename>\n", .{std.os.argv[0]});
             return;
         }
-        try stdout.print("TODO: impl this", .{});
+        // try stdout.print("TODO: impl this", .{});
+        const filename = std.mem.span(std.os.argv[2]);
+        const deck = try readDeck(allocator, filename);
+        var cards = ArrayList(Card).init(allocator);
+        var reviews = ArrayList(Review).init(allocator);
+        try parseDeck(allocator, &cards, &reviews, deck);
+        for (cards.items()) |card| {
+            try stdout.print("{any}\n", .{card});
+        }
+        for (reviews.items()) |review| {
+            try stdout.print("{any}\n", .{review});
+        }
     } else if (std.mem.eql(u8, arg, "--version")) {
         try stdout.print("0.0.0\n", .{});
     } else if (std.mem.eql(u8, arg, "--help")) {
