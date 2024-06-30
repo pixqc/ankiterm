@@ -17,7 +17,7 @@ not ready to be used yet, but soon!
 Ankiterm's commands:
 
 ```
-ankiterm [command] <filename> [options] [arguments]
+ankiterm [command] <filename>
 
 Commands:
   init <filename>         Initialize a new deck
