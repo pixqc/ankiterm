@@ -40,7 +40,7 @@ const Review = struct {
 
 fn getDefaultDeck(allocator: std.mem.Allocator) ![]u8 {
     const cards = [_]Card{
-        .{ .id = 1, .front = "2^8 paewofjaopwejfaoweijf aowpejf oawej fpoawej fopaiwej fopaewj fopawej foapiwej foaiwej f", .back = "256" },
+        .{ .id = 1, .front = "2^8", .back = "256" },
         .{ .id = 2, .front = "what is string in zig", .back = "pointer to null-terminated u8 array" },
         .{ .id = 3, .front = "what is a symlink file", .back = "pointer to file/dir" },
     };
@@ -52,7 +52,6 @@ fn getDefaultDeck(allocator: std.mem.Allocator) ![]u8 {
 
     // create a buffer to write to
     var buf = std.ArrayList(u8).init(allocator);
-    defer buf.deinit();
     const writer = buf.writer();
     for (cards) |card| {
         try json.stringify(card, .{}, writer);
@@ -104,34 +103,25 @@ fn parseDeck(allocator: std.mem.Allocator, cards: *ArrayList(Card), reviews: *Ar
     }
 }
 
-// FIX: still broken
 pub fn wrapText(allocator: std.mem.Allocator, text: []const u8, line_length: usize) ![]u8 {
     var result = std.ArrayList(u8).init(allocator);
-    errdefer result.deinit();
     var line_start: usize = 0;
     var last_space: ?usize = null;
     var current_line_length: usize = 0;
-
     for (text, 0..) |char, i| {
         if (char == ' ') {
             last_space = i;
         }
         current_line_length += 1;
-
         if (current_line_length > line_length) {
             if (last_space) |space| {
-                // trim trailing spaces
-                var end = space;
-                while (end > line_start and text[end - 1] == ' ') {
-                    end -= 1;
-                }
-                try result.appendSlice(text[line_start..end]);
+                try result.appendSlice(text[line_start..space]);
                 try result.append('\n');
                 line_start = space + 1;
                 current_line_length = i - space;
                 last_space = null;
             } else {
-                // if no space found, force wrap at line_length
+                // if no space found, force wrap at current position
                 try result.appendSlice(text[line_start..i]);
                 try result.append('\n');
                 line_start = i;
@@ -139,46 +129,53 @@ pub fn wrapText(allocator: std.mem.Allocator, text: []const u8, line_length: usi
             }
         }
     }
-
-    // handle remaining text
     if (line_start < text.len) {
         try result.appendSlice(text[line_start..]);
     }
-
     return result.toOwnedSlice();
 }
 
 pub fn reviewCard(allocator: std.mem.Allocator, card: Card, stdout: @TypeOf(std.io.getStdOut().writer())) !void {
     const MAX_WIDTH = 60;
     const wrapped_front = try wrapText(allocator, card.front, MAX_WIDTH);
-    defer allocator.free(wrapped_front);
     const wrapped_back = try wrapText(allocator, card.back, MAX_WIDTH);
-    defer allocator.free(wrapped_back);
 
     try stdout.writeAll("\n\n");
     try stdout.writeByteNTimes('=', MAX_WIDTH);
     try stdout.writeAll("\n");
-    try stdout.print("{s}\n", .{card.front});
+    try stdout.print("{s}\n", .{wrapped_front});
     try stdout.writeByteNTimes('-', MAX_WIDTH);
     try stdout.writeAll("\n");
-    try stdout.print("{s}\n", .{card.back});
+    try stdout.print("{s}\n", .{wrapped_back});
     try stdout.writeByteNTimes('=', MAX_WIDTH);
 }
 
 pub fn main() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env_map = try std.process.getEnvMap(allocator);
+    const argv = std.os.argv;
+    // const debug_mode = env_map.get("DEBUG") != null and std.mem.eql(u8, env_map.get("DEBUG").?, "1");
+    // const debug_argv = [_][*:0]const u8{ "program", "review", "abcd.ndjson" };
+    // const argv = debug_argv;
+    // const argv: [][*:0]u8 = if (debug_mode)
+    //     @ptrCast(&debug_argv)
+    // else
+    //     std.os.argv;
 
     // SECTION: playground, for testing small code snippets ===================
+    // set PLAYGROUND=1 to run this code
 
-    if (true) {
-        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-        defer arena.deinit();
-        const allocator = arena.allocator();
+    const playground_mode = env_map.get("PLAYGROUND") != null and std.mem.eql(u8, env_map.get("PLAYGROUND").?, "1");
+    if (playground_mode) {
         print("{s}\n", .{"hi playground"});
         const deck = try getDefaultDeck(allocator);
         var cards = ArrayList(Card).init(allocator);
         var reviews = ArrayList(Review).init(allocator);
         try parseDeck(allocator, &cards, &reviews, deck);
-        try reviewCard(allocator, cards.items[0], std.io.getStdOut().writer());
+        try reviewCard(allocator, cards.items[2], std.io.getStdOut().writer());
         return;
     }
 
@@ -186,7 +183,7 @@ pub fn main() !void {
 
     const stdout = std.io.getStdOut().writer();
     const help =
-        \\Usage: {s} <command> <filename> [options] [arguments]
+        \\Usage: {s} <command> <filename>
         \\Commands:
         \\  init <filename>         Initialize a new deck
         \\  review <filename>       Review due cards
@@ -198,24 +195,20 @@ pub fn main() !void {
         \\  --version               Show version information and exit
     ;
 
-    if (std.os.argv.len < 2) {
+    if (argv.len < 2) {
         try stdout.print("{s}", .{help});
         return;
     }
 
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    const arg: []const u8 = std.mem.span(std.os.argv[1]);
+    const arg: []const u8 = std.mem.span(argv[1]);
     if (std.mem.eql(u8, arg, "init")) {
-        if (std.os.argv.len < 3) {
+        if (argv.len < 3) {
             try stdout.print("Error: 'init' command requires a filename.\n", .{});
-            try stdout.print("Usage: {s} init <filename>\n", .{std.os.argv[0]});
+            try stdout.print("Usage: {s} init <filename>\n", .{argv[0]});
             return;
         }
 
-        const filename = std.mem.span(std.os.argv[2]);
+        const filename = std.mem.span(argv[2]);
         const file = std.fs.cwd().openFile(filename, .{}) catch |err| switch (err) {
             // only write if file doens't exist
             error.FileNotFound => {
@@ -229,27 +222,26 @@ pub fn main() !void {
         defer file.close();
         try stdout.print("Error: File '{s}' already exists. Choose a different filename or delete the existing file.\n", .{filename});
     } else if (std.mem.eql(u8, arg, "review")) {
-        if (std.os.argv.len < 3) {
+        if (argv.len < 3) {
             try stdout.print("Error: 'review' command requires a filename.\n", .{});
-            try stdout.print("Usage: {s} review <filename>\n", .{std.os.argv[0]});
+            try stdout.print("Usage: {s} review <filename>\n", .{argv[0]});
             return;
         }
-        const filename = std.mem.span(std.os.argv[2]);
+        const filename = std.mem.span(argv[2]);
         const deck = try readDeck(allocator, filename);
         var cards = ArrayList(Card).init(allocator);
         var reviews = ArrayList(Review).init(allocator);
         try parseDeck(allocator, &cards, &reviews, deck);
-        // reviewCards(&cards);
         for (cards.items) |card| {
-            try reviewCard(card, stdout);
+            try reviewCard(allocator, card, stdout);
         }
     } else if (std.mem.eql(u8, arg, "--version")) {
         try stdout.print("0.0.0\n", .{});
     } else if (std.mem.eql(u8, arg, "--help")) {
-        try stdout.print(help, .{std.os.argv[0]});
+        try stdout.print(help, .{argv[0]});
     } else {
         try stdout.print("Unknown command: {s}\n", .{arg});
-        try stdout.print("Use '{s} --help' for usage information.\n", .{std.os.argv[0]});
+        try stdout.print("Use '{s} --help' for usage information.\n", .{argv[0]});
     }
 }
 
