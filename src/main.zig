@@ -153,7 +153,16 @@ pub fn reviewCard(allocator: std.mem.Allocator, card: Card, stdout: @TypeOf(std.
     try stdout.writeByteNTimes('=', MAX_WIDTH);
 
     while (true) {
-        try stdout.writeAll("\n(0) Blackout\n(1) Wrong, hard\n(2) Wrong, need hint\n(3) Correct, hard recall\n(4) Correct, easy recall\n(5) Correct, instant recall\nYour rating: ");
+        try stdout.writeAll("\n");
+        try stdout.writeAll(
+            \\(0) Blackout
+            \\(1) Wrong, hard
+            \\(2) Wrong, need hint
+            \\(3) Correct, hard recall
+            \\(4) Correct, easy recall
+            \\(5) Correct, instant recall
+            \\Your rating: 
+        );
 
         var input_buffer = std.ArrayList(u8).init(allocator);
         var input_reader = std.io.getStdIn().reader();
@@ -183,10 +192,10 @@ pub fn main() !void {
     var env_map = try std.process.getEnvMap(allocator);
 
     // SECTION: playground, for testing small code snippets ===================
-    // set PLAYGROUND=1 to run this code
 
     const playground_mode = env_map.get("PLAYGROUND") != null and std.mem.eql(u8, env_map.get("PLAYGROUND").?, "1");
     if (playground_mode) {
+        // only ran if PLAYGROUND=1
         print("{s}\n", .{"hi playground"});
         const deck = try getDefaultDeck(allocator);
         var cards = ArrayList(Card).init(allocator);
