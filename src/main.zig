@@ -156,14 +156,6 @@ pub fn main() !void {
     const allocator = arena.allocator();
 
     var env_map = try std.process.getEnvMap(allocator);
-    const argv = std.os.argv;
-    // const debug_mode = env_map.get("DEBUG") != null and std.mem.eql(u8, env_map.get("DEBUG").?, "1");
-    // const debug_argv = [_][*:0]const u8{ "program", "review", "abcd.ndjson" };
-    // const argv = debug_argv;
-    // const argv: [][*:0]u8 = if (debug_mode)
-    //     @ptrCast(&debug_argv)
-    // else
-    //     std.os.argv;
 
     // SECTION: playground, for testing small code snippets ===================
     // set PLAYGROUND=1 to run this code
@@ -195,6 +187,7 @@ pub fn main() !void {
         \\  --version               Show version information and exit
     ;
 
+    const argv = std.os.argv;
     if (argv.len < 2) {
         try stdout.print("{s}", .{help});
         return;
