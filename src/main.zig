@@ -143,11 +143,36 @@ pub fn reviewCard(allocator: std.mem.Allocator, card: Card, stdout: @TypeOf(std.
     try stdout.writeAll("\n\n");
     try stdout.writeByteNTimes('=', MAX_WIDTH);
     try stdout.writeAll("\n");
-    try stdout.print("{s}\n", .{wrapped_front});
+    try stdout.print("Q: {s}\n", .{wrapped_front});
     try stdout.writeByteNTimes('-', MAX_WIDTH);
-    try stdout.writeAll("\n");
-    try stdout.print("{s}\n", .{wrapped_back});
+
+    var buffer: [1]u8 = undefined;
+    _ = try std.io.getStdIn().read(&buffer);
+
+    try stdout.print("A: {s}\n", .{wrapped_back});
     try stdout.writeByteNTimes('=', MAX_WIDTH);
+
+    while (true) {
+        try stdout.writeAll("\n(0) Blackout\n(1) Wrong, hard\n(2) Wrong, need hint\n(3) Correct, hard recall\n(4) Correct, easy recall\n(5) Correct, instant recall\nYour rating: ");
+
+        var input_buffer = std.ArrayList(u8).init(allocator);
+        var input_reader = std.io.getStdIn().reader();
+        try input_reader.streamUntilDelimiter(input_buffer.writer(), '\n', 2);
+        const input = input_buffer.items;
+        const difficulty_rating = std.fmt.parseInt(u8, input, 10) catch continue;
+
+        if (difficulty_rating > 5) continue;
+        const review = Review{
+            .id = 0,
+            .type = "review",
+            .card_id = card.id,
+            .difficulty_rating = difficulty_rating,
+            .timestamp = @intCast(std.time.timestamp()),
+            .algo = SRSAlgo.sm2,
+        };
+        print("review: {any}\n", .{review});
+        break;
+    }
 }
 
 pub fn main() !void {
