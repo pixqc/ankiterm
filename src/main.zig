@@ -226,8 +226,10 @@ pub fn main() !void {
         try stdout.print("{s}", .{help});
         return;
     }
-
     const arg: []const u8 = std.mem.span(argv[1]);
+
+    // SECTION: ankiterm init =================================================
+
     if (std.mem.eql(u8, arg, "init")) {
         if (argv.len < 3) {
             try stdout.print("Error: 'init' command requires a filename.\n", .{});
@@ -248,7 +250,11 @@ pub fn main() !void {
         };
         defer file.close();
         try stdout.print("Error: File '{s}' already exists. Choose a different filename or delete the existing file.\n", .{filename});
-    } else if (std.mem.eql(u8, arg, "review")) {
+    }
+
+    // SECTION: ankiterm review ===============================================
+
+    else if (std.mem.eql(u8, arg, "review")) {
         if (argv.len < 3) {
             try stdout.print("Error: 'review' command requires a filename.\n", .{});
             try stdout.print("Usage: {s} review <filename>\n", .{argv[0]});
@@ -264,11 +270,20 @@ pub fn main() !void {
             try reviewCard(allocator, card, review_id, stdout);
             review_id += 1;
         }
-    } else if (std.mem.eql(u8, arg, "--version")) {
+        try stdout.print("\nYou have finished reviewing all the flashcards.\n", .{});
+    }
+
+    // SECTION: ankiterm --version and --help =================================
+
+    else if (std.mem.eql(u8, arg, "--version")) {
         try stdout.print("0.0.0\n", .{});
     } else if (std.mem.eql(u8, arg, "--help")) {
         try stdout.print(help, .{argv[0]});
-    } else {
+    }
+
+    // SECTION: ankiterm <unknown> ============================================
+
+    else {
         try stdout.print("Unknown command: {s}\n", .{arg});
         try stdout.print("Use '{s} --help' for usage information.\n", .{argv[0]});
     }
