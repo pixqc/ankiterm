@@ -135,7 +135,7 @@ pub fn wrapText(allocator: std.mem.Allocator, text: []const u8, line_length: usi
     return result.toOwnedSlice();
 }
 
-pub fn reviewCard(allocator: std.mem.Allocator, card: Card, stdout: @TypeOf(std.io.getStdOut().writer())) !void {
+pub fn reviewCard(allocator: std.mem.Allocator, card: Card, review_id: u32, stdout: @TypeOf(std.io.getStdOut().writer())) !void {
     const MAX_WIDTH = 60;
     const wrapped_front = try wrapText(allocator, card.front, MAX_WIDTH);
     const wrapped_back = try wrapText(allocator, card.back, MAX_WIDTH);
@@ -172,7 +172,7 @@ pub fn reviewCard(allocator: std.mem.Allocator, card: Card, stdout: @TypeOf(std.
 
         if (difficulty_rating > 5) continue;
         const review = Review{
-            .id = 0,
+            .id = review_id,
             .type = "review",
             .card_id = card.id,
             .difficulty_rating = difficulty_rating,
@@ -201,7 +201,7 @@ pub fn main() !void {
         var cards = ArrayList(Card).init(allocator);
         var reviews = ArrayList(Review).init(allocator);
         try parseDeck(allocator, &cards, &reviews, deck);
-        try reviewCard(allocator, cards.items[2], std.io.getStdOut().writer());
+        try reviewCard(allocator, cards.items[2], 0, std.io.getStdOut().writer());
         return;
     }
 
@@ -259,8 +259,10 @@ pub fn main() !void {
         var cards = ArrayList(Card).init(allocator);
         var reviews = ArrayList(Review).init(allocator);
         try parseDeck(allocator, &cards, &reviews, deck);
+        var review_id: u32 = @intCast(reviews.items.len + 1);
         for (cards.items) |card| {
-            try reviewCard(allocator, card, stdout);
+            try reviewCard(allocator, card, review_id, stdout);
+            review_id += 1;
         }
     } else if (std.mem.eql(u8, arg, "--version")) {
         try stdout.print("0.0.0\n", .{});
