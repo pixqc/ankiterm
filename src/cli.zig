@@ -24,7 +24,7 @@ pub const Command = union(enum) {
     help: void,
 
     pub const help =
-        \\Usage: {s} <command> <filename>
+        \\Usage: ankiterm <command> <filename>
         \\Commands:
         \\  init <filename>         Initialize a new deck
         \\  review <filename>       Review due cards
@@ -37,7 +37,8 @@ pub const Command = union(enum) {
     ;
 };
 
-/// source: tigerbeetle
+/// https://github.com/tigerbeetle/tigerbeetle/blob/31130f3b924cad6787270e0fa0b5dcbea09baf66/src/flags.zig#L51
+///
 /// const CliArgs = union(enum) {
 ///    start: struct { addresses: []const u8, replica: u32 },
 ///    format: struct {
@@ -54,16 +55,23 @@ pub const Command = union(enum) {
 ///
 /// const cli_args = parse_commands(&args, CliArgs);
 
-// parse cli arguments as structs or `union(enum)`
-pub fn parse(allocator: std.mem.Allocator, args: *std.process.ArgIterator) !void {
-    _ = allocator;
+// parse cli arguments passed to ankiterm binary as structs or `union(enum)`
+pub fn parse(args: *std.process.ArgIterator) !Command {
     assert(args.skip()); // skip the program name
-    const first_arg = args.next() orelse fatal("subcommand required, expected init or review", .{});
+    const subcmd = args.next() orelse fatal("subcommand required, expected init or review", .{});
 
-    if (std.mem.eql(u8, first_arg, "-h") or std.mem.eql(u8, first_arg, "--help")) {
+    if (std.mem.eql(u8, subcmd, "-h") or std.mem.eql(u8, subcmd, "--help")) {
         std.io.getStdOut().writeAll(Command.help) catch std.posix.exit(1);
         std.posix.exit(0);
     }
 
-    print("first_arg: {any}\n", .{first_arg});
+    const filename = args.next() orelse fatal("filename required", .{});
+
+    if (std.mem.eql(u8, subcmd, "init")) {
+        return Command{ .init = .{ .filename = filename } };
+    } else if (std.mem.eql(u8, subcmd, "review")) {
+        return Command{ .review = .{ .filename = filename } };
+    } else {
+        fatal("unknown command: {s}", .{subcmd});
+    }
 }

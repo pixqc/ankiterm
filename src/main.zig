@@ -198,9 +198,8 @@ pub fn main() !void {
     if (playground_mode) {
         var arg_iterator = try std.process.argsWithAllocator(allocator);
         defer arg_iterator.deinit();
-        // const cmd =
-        try cli.parse(allocator, &arg_iterator);
-        // print("cmd: {any}\n", .{cmd});
+        const cmd = try cli.parse(&arg_iterator);
+        print("cmd: {any}\n", .{cmd});
         return;
     }
 
