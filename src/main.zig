@@ -2,8 +2,15 @@ const std = @import("std");
 const print = std.debug.print;
 const expect = std.testing.expect;
 const json = std.json;
+const fmt = std.fmt;
 const ArrayList = std.ArrayList;
+
 const cli = @import("cli.zig");
+
+// LINGO:
+// - card: a flashcard item
+// - review: a review of a card
+// - deck: a collection of cards and reviews
 
 const SRSAlgo = enum {
     sm2,
@@ -17,14 +24,13 @@ const SRSAlgo = enum {
     }
 };
 
-// LINGO:
-// - card: a flashcard item
-// - review: a review of a card
-// - deck: a collection of cards and reviews
-
 const Card = struct {
+    // card_hash is card id
+    // slice(sha256(concat(front,back)), 0, 16);
+    // card hash should not be saved to deck
+    // having to worry about card id when adding new cards is annoying
+    card_hash: [16]u8 = undefined,
     type: []const u8 = "card",
-    id: u32,
     front: []const u8,
     back: []const u8,
     nextReview: ?u32 = null, // unix second
@@ -33,25 +39,24 @@ const Card = struct {
 const Review = struct {
     type: []const u8 = "review",
     id: u32,
-    card_id: u32,
+    card_hash: [16]u8,
     difficulty_rating: u8,
-    timestamp: u64,
+    timestamp: u32, // unix second
     algo: SRSAlgo,
 };
 
 fn getDefaultDeck(allocator: std.mem.Allocator) ![]u8 {
     const cards = [_]Card{
-        .{ .id = 1, .front = "2^8", .back = "256" },
-        .{ .id = 2, .front = "what is string in zig", .back = "pointer to null-terminated u8 array" },
-        .{ .id = 3, .front = "what is a symlink file", .back = "pointer to file/dir" },
+        .{ .front = "2^8", .back = "256" },
+        .{ .front = "what is string in zig", .back = "pointer to null-terminated u8 array" },
+        .{ .front = "what is a symlink file", .back = "pointer to file/dir" },
     };
     const reviews = [_]Review{
-        .{ .id = 1, .card_id = 1, .difficulty_rating = 5, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
-        .{ .id = 2, .card_id = 2, .difficulty_rating = 0, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
-        .{ .id = 3, .card_id = 3, .difficulty_rating = 3, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
+        .{ .id = 1, .card_hash = "0000000000000001".*, .difficulty_rating = 5, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
+        .{ .id = 2, .card_hash = "0000000000000002".*, .difficulty_rating = 0, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
+        .{ .id = 3, .card_hash = "0000000000000003".*, .difficulty_rating = 0, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
     };
 
-    // create a buffer to write to
     var buf = std.ArrayList(u8).init(allocator);
     const writer = buf.writer();
     for (cards) |card| {
@@ -95,7 +100,10 @@ fn parseDeck(allocator: std.mem.Allocator, cards: *ArrayList(Card), reviews: *Ar
         const root = parsed.value.object;
         const typ = root.get("type").?.string;
         if (std.mem.eql(u8, typ, "card")) {
-            const card = try std.json.parseFromSlice(Card, allocator, line, .{});
+            var card = try std.json.parseFromSlice(Card, allocator, line, .{});
+            var front_hash: [32]u8 = undefined;
+            std.crypto.hash.sha2.Sha256.hash(card.value.front, &front_hash, .{});
+            card.value.card_hash = front_hash[0..16].*;
             try cards.append(card.value);
         } else if (std.mem.eql(u8, typ, "review")) {
             const review = try std.json.parseFromSlice(Review, allocator, line, .{});
@@ -175,7 +183,7 @@ fn reviewCard(allocator: std.mem.Allocator, card: Card, review_id: u32, stdout: 
         const review = Review{
             .id = review_id,
             .type = "review",
-            .card_id = card.id,
+            .card_hash = "0000000000000000".*,
             .difficulty_rating = difficulty_rating,
             .timestamp = @intCast(std.time.timestamp()),
             .algo = SRSAlgo.sm2,
@@ -198,10 +206,21 @@ pub fn main() !void {
 
     const playground_mode = env_map.get("PLAYGROUND") != null and std.mem.eql(u8, env_map.get("PLAYGROUND").?, "1");
     if (playground_mode) {
-        var arg_iterator = try std.process.argsWithAllocator(allocator);
-        defer arg_iterator.deinit();
-        const cmd = try cli.parse(&arg_iterator);
-        print("cmd: {any}\n", .{cmd});
+        const defaultDeck = try getDefaultDeck(allocator);
+        var cards = ArrayList(Card).init(allocator);
+        var reviews = ArrayList(Review).init(allocator);
+        try parseDeck(allocator, &cards, &reviews, defaultDeck);
+        print("defaultDeck: {any}\n", .{defaultDeck});
+        print("cards: {any}\n", .{cards.items});
+        // for each card print the front and the card_hash
+        for (cards.items) |card| {
+            print("card: {s}; ", .{card.front});
+            // loop through card_hash and print the hex, no space
+            for (card.card_hash) |byte| {
+                print("{x}", .{byte});
+            }
+            print("\n", .{});
+        }
         return;
     }
 
@@ -249,8 +268,6 @@ pub fn main() !void {
         },
     }
 }
-
-// use `zig test src/main.zig` to run small code in isolation
 
 test "inits properly" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
