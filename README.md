@@ -22,13 +22,13 @@ ankiterm [command] <filename>
 Commands:
   init <filename>         Initialize a new deck
   review <filename>       Review due cards
-  stats <filename>        Show statistics
-  tidy <filename>         Tidy up the deck
 
 Global Options:
   --help                  Show help message and exit
   --version               Show version information and exit
 ```
+
+(Why is there no `add` subcommand? Because the deck is meant to be edited directly with text editor.)
 
 To initialize a new deck:
 

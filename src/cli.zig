@@ -28,8 +28,6 @@ pub const Command = union(enum) {
         \\Commands:
         \\  init <filename>         Initialize a new deck
         \\  review <filename>       Review due cards
-        \\  stats <filename>        Show statistics
-        \\  tidy <filename>         Tidy up the deck
         \\
         \\Global Options:
         \\  --help                  Show help message and exit
