@@ -26,10 +26,11 @@ const SRSAlgo = enum {
 
 const Card = struct {
     // card_hash is card id
-    // slice(sha256(concat(front,back)), 0, 16);
+    // slice(sha256(concat(front,back)), 0, 8);
+    // 8 bytes, store as hex string (16 chars)
     // card hash should not be saved to deck
     // having to worry about card id when adding new cards is annoying
-    card_hash: [16]u8 = undefined,
+    card_hash: [8]u8 = undefined,
     type: []const u8 = "card",
     front: []const u8,
     back: []const u8,
@@ -39,7 +40,7 @@ const Card = struct {
 const Review = struct {
     type: []const u8 = "review",
     id: u32,
-    card_hash: [16]u8,
+    card_hash: [8]u8,
     difficulty_rating: u8,
     timestamp: u32, // unix second
     algo: SRSAlgo,
@@ -52,11 +53,10 @@ fn getDefaultDeck(allocator: std.mem.Allocator) ![]u8 {
         .{ .front = "what is a symlink file", .back = "pointer to file/dir" },
     };
     const reviews = [_]Review{
-        .{ .id = 1, .card_hash = "0000000000000001".*, .difficulty_rating = 5, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
-        .{ .id = 2, .card_hash = "0000000000000002".*, .difficulty_rating = 0, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
-        .{ .id = 3, .card_hash = "0000000000000003".*, .difficulty_rating = 0, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
+        .{ .id = 1, .card_hash = "00000001".*, .difficulty_rating = 5, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
+        .{ .id = 2, .card_hash = "00000002".*, .difficulty_rating = 0, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
+        .{ .id = 3, .card_hash = "00000003".*, .difficulty_rating = 0, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
     };
-
     var buf = std.ArrayList(u8).init(allocator);
     const writer = buf.writer();
     for (cards) |card| {
@@ -103,7 +103,7 @@ fn parseDeck(allocator: std.mem.Allocator, cards: *ArrayList(Card), reviews: *Ar
             var card = try std.json.parseFromSlice(Card, allocator, line, .{});
             var front_hash: [32]u8 = undefined;
             std.crypto.hash.sha2.Sha256.hash(card.value.front, &front_hash, .{});
-            card.value.card_hash = front_hash[0..16].*;
+            card.value.card_hash = front_hash[0..8].*;
             try cards.append(card.value);
         } else if (std.mem.eql(u8, typ, "review")) {
             const review = try std.json.parseFromSlice(Review, allocator, line, .{});
@@ -183,7 +183,7 @@ fn reviewCard(allocator: std.mem.Allocator, card: Card, review_id: u32, stdout: 
         const review = Review{
             .id = review_id,
             .type = "review",
-            .card_hash = "0000000000000000".*,
+            .card_hash = card.card_hash,
             .difficulty_rating = difficulty_rating,
             .timestamp = @intCast(std.time.timestamp()),
             .algo = SRSAlgo.sm2,
