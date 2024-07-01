@@ -3,6 +3,7 @@ const print = std.debug.print;
 const expect = std.testing.expect;
 const json = std.json;
 const ArrayList = std.ArrayList;
+const cli = @import("cli.zig");
 
 const SRSAlgo = enum {
     sm2,
@@ -103,7 +104,7 @@ fn parseDeck(allocator: std.mem.Allocator, cards: *ArrayList(Card), reviews: *Ar
     }
 }
 
-pub fn wrapText(allocator: std.mem.Allocator, text: []const u8, line_length: usize) ![]u8 {
+fn wrapText(allocator: std.mem.Allocator, text: []const u8, line_length: usize) ![]u8 {
     var result = std.ArrayList(u8).init(allocator);
     var line_start: usize = 0;
     var last_space: ?usize = null;
@@ -135,7 +136,7 @@ pub fn wrapText(allocator: std.mem.Allocator, text: []const u8, line_length: usi
     return result.toOwnedSlice();
 }
 
-pub fn reviewCard(allocator: std.mem.Allocator, card: Card, review_id: u32, stdout: @TypeOf(std.io.getStdOut().writer())) !void {
+fn reviewCard(allocator: std.mem.Allocator, card: Card, review_id: u32, stdout: @TypeOf(std.io.getStdOut().writer())) !void {
     const MAX_WIDTH = 60;
     const wrapped_front = try wrapText(allocator, card.front, MAX_WIDTH);
     const wrapped_back = try wrapText(allocator, card.back, MAX_WIDTH);
@@ -195,13 +196,11 @@ pub fn main() !void {
 
     const playground_mode = env_map.get("PLAYGROUND") != null and std.mem.eql(u8, env_map.get("PLAYGROUND").?, "1");
     if (playground_mode) {
-        // only ran if PLAYGROUND=1
-        print("{s}\n", .{"hi playground"});
-        const deck = try getDefaultDeck(allocator);
-        var cards = ArrayList(Card).init(allocator);
-        var reviews = ArrayList(Review).init(allocator);
-        try parseDeck(allocator, &cards, &reviews, deck);
-        try reviewCard(allocator, cards.items[2], 0, std.io.getStdOut().writer());
+        var arg_iterator = try std.process.argsWithAllocator(allocator);
+        defer arg_iterator.deinit();
+        // const cmd =
+        try cli.parse(allocator, &arg_iterator);
+        // print("cmd: {any}\n", .{cmd});
         return;
     }
 
@@ -236,7 +235,6 @@ pub fn main() !void {
             try stdout.print("Usage: {s} init <filename>\n", .{argv[0]});
             return;
         }
-
         const filename = std.mem.span(argv[2]);
         const file = std.fs.cwd().openFile(filename, .{}) catch |err| switch (err) {
             // only write if file doens't exist
@@ -265,12 +263,27 @@ pub fn main() !void {
         var cards = ArrayList(Card).init(allocator);
         var reviews = ArrayList(Review).init(allocator);
         try parseDeck(allocator, &cards, &reviews, deck);
+        // assumes review is not altered by user, autoinc u32
         var review_id: u32 = @intCast(reviews.items.len + 1);
         for (cards.items) |card| {
             try reviewCard(allocator, card, review_id, stdout);
             review_id += 1;
         }
         try stdout.print("\nYou have finished reviewing all the flashcards.\n", .{});
+    }
+
+    // SECTION: ankiterm tidy =================================================
+
+    else if (std.mem.eql(u8, arg, "tidy")) {
+        if (argv.len < 3) {
+            try stdout.print("Error: 'tidy' command requires a filename.\n", .{});
+            try stdout.print("Usage: {s} tidy <filename>\n", .{argv[0]});
+            return;
+        }
+        const filename = std.mem.span(argv[2]);
+        const deck = try readDeck(allocator, filename);
+        print("deck: {any}\n", .{deck});
+        // TODO: tidy up the cards, incuding adding id to cards etc
     }
 
     // SECTION: ankiterm --version and --help =================================
