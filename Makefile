@@ -1,7 +1,6 @@
 .PHONY: dev
 dev:
-	cd src/ && ls | entr -r zig run main.zig
+	cd src/ && ls | entr -r sh -c 'cd .. && zig build && ./zig-out/bin/ankiterm'
 
-test:
-	cd src/ && ls | entr -r zig test main.zig
-
+playground:
+	zig build && PLAYGROUND=1 ./zig-out/bin/ankiterm init
