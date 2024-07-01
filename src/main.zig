@@ -192,6 +192,8 @@ pub fn main() !void {
 
     var env_map = try std.process.getEnvMap(allocator);
 
+    const stdout = std.io.getStdOut().writer();
+
     // SECTION: playground, for testing small code snippets ===================
 
     const playground_mode = env_map.get("PLAYGROUND") != null and std.mem.eql(u8, env_map.get("PLAYGROUND").?, "1");
@@ -205,99 +207,46 @@ pub fn main() !void {
 
     // SECTION: main ==========================================================
 
-    const stdout = std.io.getStdOut().writer();
-    const help =
-        \\Usage: {s} <command> <filename>
-        \\Commands:
-        \\  init <filename>         Initialize a new deck
-        \\  review <filename>       Review due cards
-        \\  stats <filename>        Show statistics
-        \\  tidy <filename>         Tidy up the deck
-        \\
-        \\Global Options:
-        \\  --help                  Show help message and exit
-        \\  --version               Show version information and exit
-    ;
+    var arg_iterator = try std.process.argsWithAllocator(allocator);
+    defer arg_iterator.deinit();
+    const cmd = try cli.parse(&arg_iterator);
 
-    const argv = std.os.argv;
-    if (argv.len < 2) {
-        try stdout.print("{s}", .{help});
-        return;
-    }
-    const arg: []const u8 = std.mem.span(argv[1]);
-
-    // SECTION: ankiterm init =================================================
-
-    if (std.mem.eql(u8, arg, "init")) {
-        if (argv.len < 3) {
-            try stdout.print("Error: 'init' command requires a filename.\n", .{});
-            try stdout.print("Usage: {s} init <filename>\n", .{argv[0]});
-            return;
-        }
-        const filename = std.mem.span(argv[2]);
-        const file = std.fs.cwd().openFile(filename, .{}) catch |err| switch (err) {
-            // only write if file doens't exist
-            error.FileNotFound => {
-                const deck = try getDefaultDeck(allocator);
-                const bytesWritten = try writeFile(filename, deck);
-                try stdout.print("Successfully wrote {d} bytes to {s}.\n", .{ bytesWritten, filename });
-                return;
-            },
-            else => |e| return e,
-        };
-        defer file.close();
-        try stdout.print("Error: File '{s}' already exists. Choose a different filename or delete the existing file.\n", .{filename});
-    }
-
-    // SECTION: ankiterm review ===============================================
-
-    else if (std.mem.eql(u8, arg, "review")) {
-        if (argv.len < 3) {
-            try stdout.print("Error: 'review' command requires a filename.\n", .{});
-            try stdout.print("Usage: {s} review <filename>\n", .{argv[0]});
-            return;
-        }
-        const filename = std.mem.span(argv[2]);
-        const deck = try readDeck(allocator, filename);
-        var cards = ArrayList(Card).init(allocator);
-        var reviews = ArrayList(Review).init(allocator);
-        try parseDeck(allocator, &cards, &reviews, deck);
-        // assumes review is not altered by user, autoinc u32
-        var review_id: u32 = @intCast(reviews.items.len + 1);
-        for (cards.items) |card| {
-            try reviewCard(allocator, card, review_id, stdout);
-            review_id += 1;
-        }
-        try stdout.print("\nYou have finished reviewing all the flashcards.\n", .{});
-    }
-
-    // SECTION: ankiterm tidy =================================================
-
-    else if (std.mem.eql(u8, arg, "tidy")) {
-        if (argv.len < 3) {
-            try stdout.print("Error: 'tidy' command requires a filename.\n", .{});
-            try stdout.print("Usage: {s} tidy <filename>\n", .{argv[0]});
-            return;
-        }
-        const filename = std.mem.span(argv[2]);
-        const deck = try readDeck(allocator, filename);
-        print("deck: {any}\n", .{deck});
-        // TODO: tidy up the cards, incuding adding id to cards etc
-    }
-
-    // SECTION: ankiterm --version and --help =================================
-
-    else if (std.mem.eql(u8, arg, "--version")) {
-        try stdout.print("0.0.0\n", .{});
-    } else if (std.mem.eql(u8, arg, "--help")) {
-        try stdout.print(help, .{argv[0]});
-    }
-
-    // SECTION: ankiterm <unknown> ============================================
-
-    else {
-        try stdout.print("Unknown command: {s}\n", .{arg});
-        try stdout.print("Use '{s} --help' for usage information.\n", .{argv[0]});
+    switch (cmd) {
+        .init => |init_cmd| {
+            const file = std.fs.cwd().openFile(init_cmd.filename, .{}) catch |err| switch (err) {
+                // only write if file doesn't exist
+                error.FileNotFound => {
+                    const deck = try getDefaultDeck(allocator);
+                    const bytesWritten = try writeFile(init_cmd.filename, deck);
+                    try stdout.print("Successfully wrote {d} bytes to {s}.\n", .{ bytesWritten, init_cmd.filename });
+                    std.posix.exit(0);
+                },
+                else => |e| return e,
+            };
+            defer file.close();
+            cli.fatal("file already exists, choose a different filename or delete the existing file", .{});
+        },
+        .review => |review_cmd| {
+            const deck = try readDeck(allocator, review_cmd.filename);
+            var cards = ArrayList(Card).init(allocator);
+            var reviews = ArrayList(Review).init(allocator);
+            try parseDeck(allocator, &cards, &reviews, deck);
+            // assumes review is not altered by user, autoinc u32
+            var review_id: u32 = @intCast(reviews.items.len + 1);
+            for (cards.items) |card| {
+                try reviewCard(allocator, card, review_id, stdout);
+                review_id += 1;
+            }
+            try stdout.print("\nYou have finished reviewing all the flashcards.\n", .{});
+        },
+        .version => {
+            try std.io.getStdOut().writeAll("ankiterm 0.0.0\n");
+            std.process.exit(0);
+        },
+        .help => {
+            try std.io.getStdOut().writeAll(cli.Command.help);
+            std.process.exit(0);
+        },
     }
 }
 

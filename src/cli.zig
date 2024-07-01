@@ -57,22 +57,16 @@ pub fn parse(args: *std.process.ArgIterator) !Command {
     assert(args.skip()); // skip the program name
     const subcmd = args.next() orelse fatal("subcommand required, expected init or review", .{});
 
-    if (std.mem.eql(u8, subcmd, "-h") or std.mem.eql(u8, subcmd, "--help")) {
-        std.io.getStdOut().writeAll(Command.help) catch std.posix.exit(1);
-        std.posix.exit(0);
-    }
-
-    if (std.mem.eql(u8, subcmd, "version")) {
-        std.io.getStdOut().writeAll("ankiterm 0.0.0\n") catch std.posix.exit(1);
-        std.posix.exit(0);
-    }
-
     const filename = args.next() orelse fatal("filename required", .{});
 
     if (std.mem.eql(u8, subcmd, "init")) {
         return Command{ .init = .{ .filename = filename } };
     } else if (std.mem.eql(u8, subcmd, "review")) {
         return Command{ .review = .{ .filename = filename } };
+    } else if (std.mem.eql(u8, subcmd, "version")) {
+        return Command{ .version = void{} };
+    } else if (std.mem.eql(u8, subcmd, "help")) {
+        return Command{ .help = void{} };
     } else {
         fatal("unknown command: {s}", .{subcmd});
     }
