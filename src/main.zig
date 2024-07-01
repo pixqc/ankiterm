@@ -7,6 +7,54 @@ const ArrayList = std.ArrayList;
 
 const cli = @import("cli.zig");
 
+// SECTION: utils =============================================================
+
+fn wrapText(allocator: std.mem.Allocator, text: []const u8, line_length: usize) ![]u8 {
+    var result = std.ArrayList(u8).init(allocator);
+    var line_start: usize = 0;
+    var last_space: ?usize = null;
+    var current_line_length: usize = 0;
+    for (text, 0..) |char, i| {
+        if (char == ' ') {
+            last_space = i;
+        }
+        current_line_length += 1;
+        if (current_line_length > line_length) {
+            if (last_space) |space| {
+                try result.appendSlice(text[line_start..space]);
+                try result.append('\n');
+                line_start = space + 1;
+                current_line_length = i - space;
+                last_space = null;
+            } else {
+                // if no space found, force wrap at current position
+                try result.appendSlice(text[line_start..i]);
+                try result.append('\n');
+                line_start = i;
+                current_line_length = 0;
+            }
+        }
+    }
+    if (line_start < text.len) {
+        try result.appendSlice(text[line_start..]);
+    }
+    return result.toOwnedSlice();
+}
+
+fn bytesToHex(bytes: *const [8]u8) [16]u8 {
+    var hex: [16]u8 = undefined;
+    _ = std.fmt.bufPrint(&hex, "{s}", .{std.fmt.fmtSliceHexLower(bytes)}) catch unreachable;
+    return hex;
+}
+
+fn hexToBytes(hex: *[]const u8) ![8]u8 {
+    var bytes: [8]u8 = undefined;
+    _ = try std.fmt.hexToBytes(&bytes, hex);
+    return bytes;
+}
+
+// SECTION: data structures ===================================================
+
 // LINGO:
 // - card: a flashcard item
 // - review: a review of a card
@@ -35,6 +83,19 @@ const Card = struct {
     front: []const u8,
     back: []const u8,
     nextReview: ?u32 = null, // unix second
+
+    fn toString(self: Card, allocator: std.mem.Allocator) ![]u8 {
+        const tmp = .{
+            .type = self.type,
+            .front = self.front,
+            .back = self.back,
+        };
+
+        var string = std.ArrayList(u8).init(allocator);
+        errdefer string.deinit();
+        try std.json.stringify(tmp, .{}, string.writer());
+        return string.toOwnedSlice();
+    }
 };
 
 const Review = struct {
@@ -44,6 +105,22 @@ const Review = struct {
     difficulty_rating: u8,
     timestamp: u32, // unix second
     algo: SRSAlgo,
+
+    fn toString(self: Review, allocator: std.mem.Allocator) ![]u8 {
+        const tmp = .{
+            .type = self.type,
+            .id = self.id,
+            .card_hash = bytesToHex(&self.card_hash),
+            .difficulty_rating = self.difficulty_rating,
+            .timestamp = self.timestamp,
+            .algo = self.algo.toString(),
+        };
+
+        var string = std.ArrayList(u8).init(allocator);
+        errdefer string.deinit();
+        try std.json.stringify(tmp, .{}, string.writer());
+        return string.toOwnedSlice();
+    }
 };
 
 fn getDefaultDeck(allocator: std.mem.Allocator) ![]u8 {
@@ -60,11 +137,13 @@ fn getDefaultDeck(allocator: std.mem.Allocator) ![]u8 {
     var buf = std.ArrayList(u8).init(allocator);
     const writer = buf.writer();
     for (cards) |card| {
-        try json.stringify(card, .{}, writer);
+        const raw = try card.toString(allocator);
+        try writer.writeAll(raw);
         try writer.writeByte('\n');
     }
     for (reviews) |review| {
-        try json.stringify(review, .{}, writer);
+        const raw = try review.toString(allocator);
+        try writer.writeAll(raw);
         try writer.writeByte('\n');
     }
     return buf.toOwnedSlice();
@@ -117,38 +196,6 @@ fn parseDeck(allocator: std.mem.Allocator, cards: *ArrayList(Card), reviews: *Ar
             try reviews.append(review.value);
         }
     }
-}
-
-fn wrapText(allocator: std.mem.Allocator, text: []const u8, line_length: usize) ![]u8 {
-    var result = std.ArrayList(u8).init(allocator);
-    var line_start: usize = 0;
-    var last_space: ?usize = null;
-    var current_line_length: usize = 0;
-    for (text, 0..) |char, i| {
-        if (char == ' ') {
-            last_space = i;
-        }
-        current_line_length += 1;
-        if (current_line_length > line_length) {
-            if (last_space) |space| {
-                try result.appendSlice(text[line_start..space]);
-                try result.append('\n');
-                line_start = space + 1;
-                current_line_length = i - space;
-                last_space = null;
-            } else {
-                // if no space found, force wrap at current position
-                try result.appendSlice(text[line_start..i]);
-                try result.append('\n');
-                line_start = i;
-                current_line_length = 0;
-            }
-        }
-    }
-    if (line_start < text.len) {
-        try result.appendSlice(text[line_start..]);
-    }
-    return result.toOwnedSlice();
 }
 
 fn reviewCard(allocator: std.mem.Allocator, card: Card, review_id: u32, stdout: @TypeOf(std.io.getStdOut().writer())) !void {
@@ -264,16 +311,17 @@ pub fn main() !void {
 
 fn sandbox(allocator: std.mem.Allocator) !void {
     const defaultDeck = try getDefaultDeck(allocator);
-    var cards = ArrayList(Card).init(allocator);
-    var reviews = ArrayList(Review).init(allocator);
-    try parseDeck(allocator, &cards, &reviews, defaultDeck);
-    print("defaultDeck: {any}\n", .{defaultDeck});
-    print("cards: {any}\n", .{cards.items});
-    // for each card print the front and the card_hash
-    for (cards.items) |card| {
-        print("card: {s}; ", .{card.front});
-        print("card_hash: {any}\n", .{card.card_hash});
-    }
+    print("defaultDeck: {s}\n", .{defaultDeck});
+    // var cards = ArrayList(Card).init(allocator);
+    // var reviews = ArrayList(Review).init(allocator);
+    // try parseDeck(allocator, &cards, &reviews, defaultDeck);
+    // print("defaultDeck: {any}\n", .{defaultDeck});
+    // print("cards: {any}\n", .{cards.items});
+    // // for each card print the front and the card_hash
+    // for (cards.items) |card| {
+    //     print("card: {s}; ", .{card.front});
+    //     print("card_hash: {any}\n", .{card.card_hash});
+    // }
 }
 
 test "inits properly" {
