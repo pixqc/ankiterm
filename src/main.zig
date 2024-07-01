@@ -201,27 +201,17 @@ pub fn main() !void {
 
     var env_map = try std.process.getEnvMap(allocator);
 
-    const stdout = std.io.getStdOut().writer();
+    // SECTION: sandbox, for testing small code snippets ======================
 
-    // SECTION: playground, for testing small code snippets ===================
-
-    const playground_mode = env_map.get("PLAYGROUND") != null and std.mem.eql(u8, env_map.get("PLAYGROUND").?, "1");
-    if (playground_mode) {
-        const defaultDeck = try getDefaultDeck(allocator);
-        var cards = ArrayList(Card).init(allocator);
-        var reviews = ArrayList(Review).init(allocator);
-        try parseDeck(allocator, &cards, &reviews, defaultDeck);
-        print("defaultDeck: {any}\n", .{defaultDeck});
-        print("cards: {any}\n", .{cards.items});
-        // for each card print the front and the card_hash
-        for (cards.items) |card| {
-            print("card: {s}; ", .{card.front});
-            print("card_hash: {any}\n", .{card.card_hash});
-        }
-        return;
+    const sandbox_mode = env_map.get("SANDBOX") != null and std.mem.eql(u8, env_map.get("SANDBOX").?, "1");
+    if (sandbox_mode) {
+        try sandbox(allocator);
+        std.posix.exit(0);
     }
 
     // SECTION: main ==========================================================
+
+    const stdout = std.io.getStdOut().writer();
 
     var arg_iterator = try std.process.argsWithAllocator(allocator);
     defer arg_iterator.deinit();
@@ -263,6 +253,20 @@ pub fn main() !void {
             try std.io.getStdOut().writeAll(cli.Command.help);
             std.process.exit(0);
         },
+    }
+}
+
+fn sandbox(allocator: std.mem.Allocator) !void {
+    const defaultDeck = try getDefaultDeck(allocator);
+    var cards = ArrayList(Card).init(allocator);
+    var reviews = ArrayList(Review).init(allocator);
+    try parseDeck(allocator, &cards, &reviews, defaultDeck);
+    print("defaultDeck: {any}\n", .{defaultDeck});
+    print("cards: {any}\n", .{cards.items});
+    // for each card print the front and the card_hash
+    for (cards.items) |card| {
+        print("card: {s}; ", .{card.front});
+        print("card_hash: {any}\n", .{card.card_hash});
     }
 }
 
