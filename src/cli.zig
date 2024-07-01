@@ -11,30 +11,6 @@ pub fn fatal(comptime fmt_string: []const u8, args: anytype) noreturn {
     std.posix.exit(1);
 }
 
-pub const Command = union(enum) {
-    pub const Init = struct {
-        filename: []const u8,
-    };
-    pub const Review = struct {
-        filename: []const u8,
-    };
-    init: Init,
-    review: Review,
-    version: void,
-    help: void,
-
-    pub const help =
-        \\Usage: ankiterm <command> <filename>
-        \\Commands:
-        \\  init <filename>         Initialize a new deck
-        \\  review <filename>       Review due cards
-        \\
-        \\Global Options:
-        \\  --help                  Show help message and exit
-        \\  --version               Show version information and exit
-    ;
-};
-
 /// https://github.com/tigerbeetle/tigerbeetle/blob/31130f3b924cad6787270e0fa0b5dcbea09baf66/src/flags.zig#L51
 ///
 /// const CliArgs = union(enum) {
@@ -52,6 +28,29 @@ pub const Command = union(enum) {
 /// }
 ///
 /// const cli_args = parse_commands(&args, CliArgs);
+pub const Command = union(enum) {
+    pub const Init = struct {
+        filename: []const u8,
+    };
+    pub const Review = struct {
+        filename: []const u8,
+    };
+    init: Init,
+    review: Review,
+    version: void,
+    help: void,
+
+    pub const help =
+        \\Usage: ankiterm <command> [<filename>]
+        \\Commands:
+        \\  init <filename>         Initialize a new deck
+        \\  review <filename>       Review due cards
+        \\  version                 Show version information and exit
+        \\
+        \\Global Options:
+        \\  --help                  Show help message and exit
+    ;
+};
 
 // parse cli arguments passed to ankiterm binary as structs or `union(enum)`
 pub fn parse(args: *std.process.ArgIterator) !Command {
@@ -60,6 +59,11 @@ pub fn parse(args: *std.process.ArgIterator) !Command {
 
     if (std.mem.eql(u8, subcmd, "-h") or std.mem.eql(u8, subcmd, "--help")) {
         std.io.getStdOut().writeAll(Command.help) catch std.posix.exit(1);
+        std.posix.exit(0);
+    }
+
+    if (std.mem.eql(u8, subcmd, "version")) {
+        std.io.getStdOut().writeAll("ankiterm 0.0.0\n") catch std.posix.exit(1);
         std.posix.exit(0);
     }
 
