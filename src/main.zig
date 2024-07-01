@@ -53,9 +53,9 @@ fn getDefaultDeck(allocator: std.mem.Allocator) ![]u8 {
         .{ .front = "what is a symlink file", .back = "pointer to file/dir" },
     };
     const reviews = [_]Review{
-        .{ .id = 1, .card_hash = "00000001".*, .difficulty_rating = 5, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
-        .{ .id = 2, .card_hash = "00000002".*, .difficulty_rating = 0, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
-        .{ .id = 3, .card_hash = "00000003".*, .difficulty_rating = 0, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
+        .{ .id = 1, .card_hash = .{ 191, 58, 6, 27, 32, 236, 22, 253 }, .difficulty_rating = 5, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
+        .{ .id = 2, .card_hash = .{ 230, 203, 160, 172, 115, 67, 97, 68 }, .difficulty_rating = 0, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
+        .{ .id = 3, .card_hash = .{ 167, 78, 138, 228, 253, 116, 83, 95 }, .difficulty_rating = 0, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
     };
     var buf = std.ArrayList(u8).init(allocator);
     const writer = buf.writer();
@@ -101,9 +101,10 @@ fn parseDeck(allocator: std.mem.Allocator, cards: *ArrayList(Card), reviews: *Ar
         const typ = root.get("type").?.string;
         if (std.mem.eql(u8, typ, "card")) {
             var card = try std.json.parseFromSlice(Card, allocator, line, .{});
-            var front_hash: [32]u8 = undefined;
-            std.crypto.hash.sha2.Sha256.hash(card.value.front, &front_hash, .{});
-            card.value.card_hash = front_hash[0..8].*;
+            const card_content = try std.mem.concat(allocator, u8, &[_][]const u8{ card.value.front, card.value.back });
+            var card_hash: [32]u8 = undefined;
+            std.crypto.hash.sha2.Sha256.hash(card_content, &card_hash, .{});
+            card.value.card_hash = card_hash[0..8].*;
             try cards.append(card.value);
         } else if (std.mem.eql(u8, typ, "review")) {
             const review = try std.json.parseFromSlice(Review, allocator, line, .{});
@@ -215,11 +216,7 @@ pub fn main() !void {
         // for each card print the front and the card_hash
         for (cards.items) |card| {
             print("card: {s}; ", .{card.front});
-            // loop through card_hash and print the hex, no space
-            for (card.card_hash) |byte| {
-                print("{x}", .{byte});
-            }
-            print("\n", .{});
+            print("card_hash: {any}\n", .{card.card_hash});
         }
         return;
     }
