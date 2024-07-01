@@ -90,6 +90,15 @@ fn readDeck(allocator: std.mem.Allocator, filename: []const u8) ![]u8 {
     return try file.readToEndAlloc(allocator, std.math.maxInt(usize));
 }
 
+fn getCardHash(allocator: std.mem.Allocator, card: Card) ![8]u8 {
+    const content_slices = [_][]const u8{ card.front, card.back };
+    const card_content = try std.mem.concat(allocator, u8, &content_slices);
+    defer allocator.free(card_content);
+    var card_hash: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(card_content, &card_hash, .{});
+    return card_hash[0..8].*;
+}
+
 fn parseDeck(allocator: std.mem.Allocator, cards: *ArrayList(Card), reviews: *ArrayList(Review), raw: []u8) !void {
     var it = std.mem.tokenizeAny(u8, raw, "\n");
     while (it.next()) |line| {
@@ -101,10 +110,7 @@ fn parseDeck(allocator: std.mem.Allocator, cards: *ArrayList(Card), reviews: *Ar
         const typ = root.get("type").?.string;
         if (std.mem.eql(u8, typ, "card")) {
             var card = try std.json.parseFromSlice(Card, allocator, line, .{});
-            const card_content = try std.mem.concat(allocator, u8, &[_][]const u8{ card.value.front, card.value.back });
-            var card_hash: [32]u8 = undefined;
-            std.crypto.hash.sha2.Sha256.hash(card_content, &card_hash, .{});
-            card.value.card_hash = card_hash[0..8].*;
+            card.value.card_hash = try getCardHash(allocator, card.value);
             try cards.append(card.value);
         } else if (std.mem.eql(u8, typ, "review")) {
             const review = try std.json.parseFromSlice(Review, allocator, line, .{});
@@ -247,11 +253,11 @@ pub fn main() !void {
         },
         .version => {
             try std.io.getStdOut().writeAll("ankiterm 0.0.0\n");
-            std.process.exit(0);
+            std.posix.exit(0);
         },
         .help => {
             try std.io.getStdOut().writeAll(cli.Command.help);
-            std.process.exit(0);
+            std.posix.exit(0);
         },
     }
 }
