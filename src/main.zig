@@ -53,6 +53,15 @@ fn hexToBytes(hex: *[]const u8) ![8]u8 {
     return bytes;
 }
 
+fn getCardHash(allocator: std.mem.Allocator, card: Card) ![8]u8 {
+    const content_slices = [_][]const u8{ card.front, card.back };
+    const card_content = try std.mem.concat(allocator, u8, &content_slices);
+    defer allocator.free(card_content);
+    var card_hash: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(card_content, &card_hash, .{});
+    return card_hash[0..8].*;
+}
+
 // SECTION: data structures ===================================================
 
 // LINGO:
@@ -90,7 +99,6 @@ const Card = struct {
             .front = self.front,
             .back = self.back,
         };
-
         var string = std.ArrayList(u8).init(allocator);
         errdefer string.deinit();
         try std.json.stringify(tmp, .{}, string.writer());
@@ -101,7 +109,7 @@ const Card = struct {
 const Review = struct {
     type: []const u8 = "review",
     id: u32,
-    card_hash: [8]u8,
+    card: *Card,
     difficulty_rating: u8,
     timestamp: u32, // unix second
     algo: SRSAlgo,
@@ -110,12 +118,11 @@ const Review = struct {
         const tmp = .{
             .type = self.type,
             .id = self.id,
-            .card_hash = bytesToHex(&self.card_hash),
+            .card_hash = bytesToHex(&self.card.card_hash),
             .difficulty_rating = self.difficulty_rating,
             .timestamp = self.timestamp,
             .algo = self.algo.toString(),
         };
-
         var string = std.ArrayList(u8).init(allocator);
         errdefer string.deinit();
         try std.json.stringify(tmp, .{}, string.writer());
@@ -124,15 +131,18 @@ const Review = struct {
 };
 
 fn getDefaultDeck(allocator: std.mem.Allocator) ![]u8 {
-    const cards = [_]Card{
+    var cards = [_]Card{
         .{ .front = "2^8", .back = "256" },
         .{ .front = "what is string in zig", .back = "pointer to null-terminated u8 array" },
         .{ .front = "what is a symlink file", .back = "pointer to file/dir" },
     };
+    for (&cards) |*card| {
+        card.card_hash = try getCardHash(allocator, card.*);
+    }
     const reviews = [_]Review{
-        .{ .id = 1, .card_hash = .{ 191, 58, 6, 27, 32, 236, 22, 253 }, .difficulty_rating = 5, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
-        .{ .id = 2, .card_hash = .{ 230, 203, 160, 172, 115, 67, 97, 68 }, .difficulty_rating = 0, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
-        .{ .id = 3, .card_hash = .{ 167, 78, 138, 228, 253, 116, 83, 95 }, .difficulty_rating = 0, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
+        .{ .id = 1, .card = &cards[0], .difficulty_rating = 5, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
+        .{ .id = 2, .card = &cards[1], .difficulty_rating = 0, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
+        .{ .id = 3, .card = &cards[2], .difficulty_rating = 0, .timestamp = 1718949322, .algo = SRSAlgo.sm2 },
     };
     var buf = std.ArrayList(u8).init(allocator);
     const writer = buf.writer();
@@ -167,15 +177,6 @@ fn readDeck(allocator: std.mem.Allocator, filename: []const u8) ![]u8 {
     const file = try cwd.openFile(filename, .{});
     defer file.close();
     return try file.readToEndAlloc(allocator, std.math.maxInt(usize));
-}
-
-fn getCardHash(allocator: std.mem.Allocator, card: Card) ![8]u8 {
-    const content_slices = [_][]const u8{ card.front, card.back };
-    const card_content = try std.mem.concat(allocator, u8, &content_slices);
-    defer allocator.free(card_content);
-    var card_hash: [32]u8 = undefined;
-    std.crypto.hash.sha2.Sha256.hash(card_content, &card_hash, .{});
-    return card_hash[0..8].*;
 }
 
 fn parseDeck(allocator: std.mem.Allocator, cards: *ArrayList(Card), reviews: *ArrayList(Review), raw: []u8) !void {
@@ -237,7 +238,7 @@ fn reviewCard(allocator: std.mem.Allocator, card: Card, review_id: u32, stdout: 
         const review = Review{
             .id = review_id,
             .type = "review",
-            .card_hash = card.card_hash,
+            .card = @constCast(&card),
             .difficulty_rating = difficulty_rating,
             .timestamp = @intCast(std.time.timestamp()),
             .algo = SRSAlgo.sm2,
