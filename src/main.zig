@@ -89,13 +89,17 @@ const Card = struct {
     // card_hash is card id - slice(sha256(stringify(card)), 0, 8)
     // 8 byte, 16 hex chars
     // card id is stored in deck by review
-    fn getHash(self: Card, allocator: std.mem.Allocator) ![8]u8 {
-        var buf = std.ArrayList(u8).init(allocator);
-        const writer = buf.writer();
-        try json.stringify(self, .{}, writer);
-        const card_content = buf.items;
+    fn getHash(self: Card) [8]u8 {
+        const card_str = self.toString();
         var card_hash: [32]u8 = undefined;
-        std.crypto.hash.sha2.Sha256.hash(card_content, &card_hash, .{});
+        std.crypto.hash.sha2.Sha256.hash(card_str, &card_hash, .{});
+        return card_hash[0..8].*;
+    }
+
+    fn getHashAlloc(self: Card, allocator: std.mem.Allocator) ![8]u8 {
+        const card_str = try self.toStringAlloc(allocator);
+        var card_hash: [32]u8 = undefined;
+        std.crypto.hash.sha2.Sha256.hash(card_str, &card_hash, .{});
         return card_hash[0..8].*;
     }
 
@@ -111,7 +115,7 @@ const Card = struct {
         return std.fmt.comptimePrint(self.tmpl, .{ self.front, self.back });
     }
 
-    fn allocToString(self: Card, allocator: std.mem.Allocator) ![]u8 {
+    fn toStringAlloc(self: Card, allocator: std.mem.Allocator) ![]u8 {
         return std.fmt.allocPrint(allocator, self.tmpl, .{ self.front, self.back });
     }
 };
@@ -123,14 +127,16 @@ const Review = struct {
     difficulty_rating: u8,
     timestamp: u32, // unix second
     algo: []const u8 = "sm2", // can add more algorithms later
-    tmpl: []const u8 = "{{\"type\":\"review\",\"id\":{d},\"card\":{s},\"difficulty_rating\":{d},\"timestamp\":{d},\"algo\":\"{s}\"}}",
+    tmpl: []const u8 = "{{\"type\":\"review\",\"id\":{d},\"card_hash\":{s},\"difficulty_rating\":{d},\"timestamp\":{d},\"algo\":\"{s}\"}}",
 
     fn toString(self: Review) []const u8 {
-        return std.fmt.comptimePrint(self.tmpl, .{ self.id, self.card.toString(), self.difficulty_rating, self.timestamp, self.algo });
+        const card_hash = bytesToHex(&self.card.getHash());
+        return std.fmt.comptimePrint(self.tmpl, .{ self.id, card_hash, self.difficulty_rating, self.timestamp, self.algo });
     }
 
-    fn allocToString(self: Review, allocator: std.mem.Allocator) ![]u8 {
-        return std.fmt.allocPrint(allocator, self.tmpl, .{ self.id, self.card.toString(), self.difficulty_rating, self.timestamp, self.algo });
+    fn toStringAlloc(self: Review, allocator: std.mem.Allocator) ![]u8 {
+        const card_hash = bytesToHex(&self.card.getHash());
+        return std.fmt.allocPrint(allocator, self.tmpl, .{ self.id, card_hash, self.difficulty_rating, self.timestamp, self.algo });
     }
 };
 
@@ -200,49 +206,6 @@ const dummy_string = blk: {
     break :blk result;
 };
 
-// fn getDefaultDeck(allocator: std.mem.Allocator) ![]u8 {
-//     var cards = [_]Card{
-//         .{ .front = "2^8", .back = "256" },
-//         .{ .front = "what is string in zig", .back = "pointer to null-terminated u8 array" },
-//         .{ .front = "what is a symlink file", .back = "pointer to file/dir" },
-//     };
-//     for (&cards) |*card| {
-//         card.card_hash = try getCardHash(allocator, card.*);
-//     }
-//     const reviews = [_]Review{
-//         .{
-//             .id = 1,
-//             .card = &cards[0],
-//             .difficulty_rating = 5,
-//             .timestamp = 1718949322,
-//         },
-//         .{
-//             .id = 2,
-//             .card = &cards[1],
-//             .difficulty_rating = 0,
-//             .timestamp = 1718949322,
-//         },
-//         .{
-//             .id = 3,
-//             .card = &cards[2],
-//             .difficulty_rating = 0,
-//             .timestamp = 1718949322,
-//         },
-//     };
-//     var buf = std.ArrayList(u8).init(allocator);
-//     const writer = buf.writer();
-//     for (cards) |card| {
-//         const raw = try card.toString(allocator);
-//         try writer.writeAll(raw);
-//         try writer.writeByte('\n');
-//     }
-//     for (reviews) |review| {
-//         const raw = try review.toString(allocator);
-//         try writer.writeAll(raw);
-//         try writer.writeByte('\n');
-//     }
-//     return buf.toOwnedSlice();
-// }
 //
 // fn parseDeck(allocator: std.mem.Allocator, cards: *ArrayList(Card), reviews: *ArrayList(Review), raw: []u8) !void {
 //     var it = std.mem.tokenizeAny(u8, raw, "\n");
@@ -354,17 +317,8 @@ pub fn main() !void {
             const file = cwd.openFile(init_cmd.filename, .{}) catch |err| switch (err) {
                 // only write if file doesn't exist
                 error.FileNotFound => {
-                    // const deck = try getDefaultDeck(allocator);
                     var buf = std.ArrayList(u8).init(allocator);
-                    const writer = buf.writer();
-                    for (dummy_cards) |card| {
-                        try json.stringify(card, .{}, writer);
-                        try writer.writeByte('\n');
-                    }
-                    for (dummy_reviews) |review| {
-                        try json.stringify(review, .{}, writer);
-                        try writer.writeByte('\n');
-                    }
+                    try buf.appendSlice(dummy_string);
                     const bytesWritten = try writeFile(init_cmd.filename, buf.items);
                     try stdout.print("Successfully wrote {d} bytes to {s}.\n", .{ bytesWritten, init_cmd.filename });
                     std.posix.exit(0);
