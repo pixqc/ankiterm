@@ -127,7 +127,7 @@ const Review = struct {
     difficulty_rating: u8,
     timestamp: u32, // unix second
     algo: []const u8 = "sm2", // can add more algorithms later
-    tmpl: []const u8 = "{{\"type\":\"review\",\"id\":{d},\"card_hash\":{s},\"difficulty_rating\":{d},\"timestamp\":{d},\"algo\":\"{s}\"}}",
+    tmpl: []const u8 = "{{\"type\":\"review\",\"id\":{d},\"card_hash\":\"{s}\",\"difficulty_rating\":{d},\"timestamp\":{d},\"algo\":\"{s}\"}}",
 
     fn toString(self: Review) []const u8 {
         const card_hash = bytesToHex(&self.card.getHash());
@@ -206,7 +206,36 @@ const dummy_string = blk: {
     break :blk result;
 };
 
-//
+fn parseCards(allocator: std.mem.Allocator, raw: []const u8) ![]Card {
+    var cards = std.ArrayList(Card).init(allocator);
+    var lines = std.mem.split(u8, raw, "\n");
+
+    while (lines.next()) |line| {
+        if (line.len == 0) {
+            continue;
+        }
+        if (line[0] == '/' or line[0] == '#') {
+            // skip items that start with // or #
+            continue;
+        }
+
+        const parsed = json.parseFromSlice(json.Value, allocator, line, .{}) catch |err| {
+            std.debug.print("Error parsing JSON: {}\n", .{err});
+            continue;
+        };
+        defer parsed.deinit();
+        const root = parsed.value.object;
+        const typ = root.get("type").?.string;
+        if (std.mem.eql(u8, typ, "card")) {
+            const front = root.get("front").?.string;
+            const back = root.get("back").?.string;
+            const card = Card{ .type = typ, .front = front, .back = back };
+            try cards.append(card);
+        }
+    }
+    return cards.items;
+}
+
 // fn parseDeck(allocator: std.mem.Allocator, cards: *ArrayList(Card), reviews: *ArrayList(Review), raw: []u8) !void {
 //     var it = std.mem.tokenizeAny(u8, raw, "\n");
 //     while (it.next()) |line| {
@@ -226,7 +255,7 @@ const dummy_string = blk: {
 //         }
 //     }
 // }
-//
+
 // fn reviewCard(allocator: std.mem.Allocator, card: Card, review_id: u32, stdout: @TypeOf(std.io.getStdOut().writer())) !void {
 //     const MAX_WIDTH = 60;
 //     const wrapped_front = try wrapText(allocator, card.front, MAX_WIDTH);
@@ -290,18 +319,8 @@ pub fn main() !void {
 
     if (sandbox_mode) {
         print("{s}", .{dummy_string});
-        // print("card hash: {x}\n", .{try dummy_cards[0].getHash(allocator)});
-        // var buf = std.ArrayList(u8).init(allocator);
-        // const writer = buf.writer();
-        // for (dummy_cards) |card| {
-        //     try json.stringify(card, .{}, writer);
-        //     try writer.writeByte('\n');
-        // }
-        // for (dummy_reviews) |review| {
-        //     try json.stringify(review, .{}, writer);
-        //     try writer.writeByte('\n');
-        // }
-        // std.debug.print("Cards (one per line):\n{s}\n", .{buf.items});
+        const cards = try parseCards(allocator, dummy_string);
+        print("{any}\n", .{cards});
         std.posix.exit(0);
     }
 
@@ -329,7 +348,7 @@ pub fn main() !void {
             cli.fatal("file already exists, choose a different filename or delete the existing file", .{});
         },
         .review => |review_cmd| {
-            // const deck = try readDeck(allocator, review_cmd.filename);
+            // const deck = try readFile(allocator, review_cmd.filename);
             // var cards = ArrayList(Card).init(allocator);
             // var reviews = ArrayList(Review).init(allocator);
             // try parseDeck(allocator, &cards, &reviews, deck);
@@ -340,7 +359,7 @@ pub fn main() !void {
             //     review_id += 1;
             // }
             _ = review_cmd;
-            try stdout.print("\nYou have finished reviewing all the flashcards.\n", .{});
+            try stdout.print("\nyou have finished reviewing all the flashcards.\n", .{});
         },
         .version => {
             try std.io.getStdOut().writeAll("ankiterm 0.0.0\n");
