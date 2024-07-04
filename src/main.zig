@@ -84,6 +84,7 @@ const Card = struct {
     type: []const u8 = "card",
     front: []const u8,
     back: []const u8,
+    tmpl: []const u8 = "{{\"type\":\"card\",\"front\":\"{s}\",\"back\":\"{s}\"}}",
 
     // card_hash is card id - slice(sha256(stringify(card)), 0, 8)
     // 8 byte, 16 hex chars
@@ -106,9 +107,12 @@ const Card = struct {
         return 0;
     }
 
-    fn toString(self: Card, allocator: std.mem.Allocator) ![]u8 {
-        const card = json.serialize(allocator, self, .{});
-        return card;
+    fn toString(self: Card) []const u8 {
+        return std.fmt.comptimePrint(self.tmpl, .{ self.front, self.back });
+    }
+
+    fn allocToString(self: Card, allocator: std.mem.Allocator) ![]u8 {
+        return std.fmt.allocPrint(allocator, self.tmpl, .{ self.front, self.back });
     }
 };
 
@@ -119,13 +123,18 @@ const Review = struct {
     difficulty_rating: u8,
     timestamp: u32, // unix second
     algo: []const u8 = "sm2", // can add more algorithms later
+    tmpl: []const u8 = "{{\"type\":\"review\",\"id\":{d},\"card\":{s},\"difficulty_rating\":{d},\"timestamp\":{d},\"algo\":\"{s}\"}}",
 
-    fn toString(self: Review, allocator: std.mem.Allocator) ![]u8 {
-        const review = json.serialize(allocator, self, .{});
-        return review;
+    fn toString(self: Review) []const u8 {
+        return std.fmt.comptimePrint(self.tmpl, .{ self.id, self.card.toString(), self.difficulty_rating, self.timestamp, self.algo });
+    }
+
+    fn allocToString(self: Review, allocator: std.mem.Allocator) ![]u8 {
+        return std.fmt.allocPrint(allocator, self.tmpl, .{ self.id, self.card.toString(), self.difficulty_rating, self.timestamp, self.algo });
     }
 };
 
+// TODO: should use these to test sm2 too
 const dummy_cards = [_]Card{
     .{
         .front = "2^8",
@@ -178,6 +187,17 @@ const dummy_reviews = [_]Review{
         .difficulty_rating = 0,
         .timestamp = 1718949322,
     },
+};
+
+const dummy_string = blk: {
+    var result: []const u8 = "";
+    for (dummy_cards) |card| {
+        result = result ++ card.toString() ++ "\n";
+    }
+    for (dummy_reviews) |review| {
+        result = result ++ review.toString() ++ "\n";
+    }
+    break :blk result;
 };
 
 // fn getDefaultDeck(allocator: std.mem.Allocator) ![]u8 {
@@ -300,23 +320,25 @@ pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
 
     var env_map = try std.process.getEnvMap(allocator);
+
     const sandbox_mode = env_map.get("SANDBOX") != null and std.mem.eql(u8, env_map.get("SANDBOX").?, "1");
 
     // SECTION: sandbox, for testing small code snippets ======================
 
     if (sandbox_mode) {
-        print("card hash: {x}\n", .{try dummy_cards[0].getHash(allocator)});
-        var buf = std.ArrayList(u8).init(allocator);
-        const writer = buf.writer();
-        for (dummy_cards) |card| {
-            try json.stringify(card, .{}, writer);
-            try writer.writeByte('\n');
-        }
-        for (dummy_reviews) |review| {
-            try json.stringify(review, .{}, writer);
-            try writer.writeByte('\n');
-        }
-        std.debug.print("Cards (one per line):\n{s}\n", .{buf.items});
+        print("{s}", .{dummy_string});
+        // print("card hash: {x}\n", .{try dummy_cards[0].getHash(allocator)});
+        // var buf = std.ArrayList(u8).init(allocator);
+        // const writer = buf.writer();
+        // for (dummy_cards) |card| {
+        //     try json.stringify(card, .{}, writer);
+        //     try writer.writeByte('\n');
+        // }
+        // for (dummy_reviews) |review| {
+        //     try json.stringify(review, .{}, writer);
+        //     try writer.writeByte('\n');
+        // }
+        // std.debug.print("Cards (one per line):\n{s}\n", .{buf.items});
         std.posix.exit(0);
     }
 
@@ -328,21 +350,28 @@ pub fn main() !void {
 
     switch (cmd) {
         .init => |init_cmd| {
-            // const file = try std.fs.cwd().openFile(init_cmd.filename, .{});
-            // defer file.close();
-
-            // const file = std.fs.cwd().openFile(init_cmd.filename, .{}) catch |err| switch (err) {
-            //     // only write if file doesn't exist
-            //     error.FileNotFound => {
-            //         const deck = try getDefaultDeck(allocator);
-            //         const bytesWritten = try writeFile(init_cmd.filename, deck);
-            //         try stdout.print("Successfully wrote {d} bytes to {s}.\n", .{ bytesWritten, init_cmd.filename });
-            //         std.posix.exit(0);
-            //     },
-            //     else => |e| return e,
-            // };
-            // defer file.close();
-            _ = init_cmd;
+            const cwd = std.fs.cwd();
+            const file = cwd.openFile(init_cmd.filename, .{}) catch |err| switch (err) {
+                // only write if file doesn't exist
+                error.FileNotFound => {
+                    // const deck = try getDefaultDeck(allocator);
+                    var buf = std.ArrayList(u8).init(allocator);
+                    const writer = buf.writer();
+                    for (dummy_cards) |card| {
+                        try json.stringify(card, .{}, writer);
+                        try writer.writeByte('\n');
+                    }
+                    for (dummy_reviews) |review| {
+                        try json.stringify(review, .{}, writer);
+                        try writer.writeByte('\n');
+                    }
+                    const bytesWritten = try writeFile(init_cmd.filename, buf.items);
+                    try stdout.print("Successfully wrote {d} bytes to {s}.\n", .{ bytesWritten, init_cmd.filename });
+                    std.posix.exit(0);
+                },
+                else => |e| return e,
+            };
+            defer file.close();
             cli.fatal("file already exists, choose a different filename or delete the existing file", .{});
         },
         .review => |review_cmd| {
