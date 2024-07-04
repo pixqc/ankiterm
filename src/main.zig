@@ -198,7 +198,7 @@ const dummy_reviews = blk: {
     break :blk reviews;
 };
 
-const dummy_string = blk: {
+const dummy_deck = blk: {
     var result: []const u8 = "";
     for (dummy_cards) |card| {
         result = result ++ card.toString() ++ "\n";
@@ -229,37 +229,43 @@ fn parseDeck(allocator: std.mem.Allocator, raw: []const u8) ![]Deck {
         const root = parsed.value.object;
         const typ = root.get("type").?.string;
         if (std.mem.eql(u8, typ, "card")) {
-            const tmp_front = root.get("front").?.string;
-            const tmp_back = root.get("back").?.string;
-
-            // i still dont understand why i have to dupe here
-            const front = try allocator.dupe(u8, tmp_front);
-            const back = try allocator.dupe(u8, tmp_back);
-            const card = Card{ .type = "card", .front = front, .back = back };
-            try deck.append(Deck{ .card = card });
+            const card = try json.parseFromSlice(Card, allocator, line, .{});
+            defer card.deinit();
+            try deck.append(Deck{ .card = card.value });
         } else if (std.mem.eql(u8, typ, "review")) {
-            const id = root.get("id").?.integer;
-            const difficulty_rating = root.get("difficulty_rating").?.integer;
-            const timestamp = root.get("timestamp").?.integer;
-            const tmp_card_hash = root.get("card_hash").?.string;
-            const tmp_algo = root.get("algo").?.string;
-
-            var card_hash: [16]u8 = undefined;
-            @memcpy(&card_hash, tmp_card_hash);
-            const algo = try allocator.dupe(u8, tmp_algo);
-
-            const review = Review{
-                .type = "review",
-                .id = @intCast(id),
-                .card_hash = card_hash,
-                .difficulty_rating = @intCast(difficulty_rating),
-                .timestamp = @intCast(timestamp),
-                .algo = algo,
-            };
-            try deck.append(Deck{ .review = review });
+            const review = try json.parseFromSlice(Review, allocator, line, .{});
+            defer review.deinit();
+            try deck.append(Deck{ .review = review.value });
         }
     }
     return deck.items;
+}
+
+test parseDeck {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const deck = try parseDeck(allocator, dummy_deck);
+    var card_idx: u8 = 0;
+    var review_idx: u8 = 0;
+    for (deck) |item| {
+        switch (item) {
+            .card => |card| {
+                try expect(std.mem.eql(u8, card.front, dummy_cards[card_idx].front));
+                try expect(std.mem.eql(u8, card.back, dummy_cards[card_idx].back));
+                card_idx += 1;
+            },
+            .review => |review| {
+                try expect(review.id == dummy_reviews[review_idx].id);
+                try expect(std.mem.eql(u8, &review.card_hash, &dummy_reviews[review_idx].card_hash));
+                try expect(review.difficulty_rating == dummy_reviews[review_idx].difficulty_rating);
+                try expect(review.timestamp == dummy_reviews[review_idx].timestamp);
+                review_idx += 1;
+            },
+        }
+    }
+    try expect(deck.len == dummy_cards.len + dummy_reviews.len);
 }
 
 // fn reviewCard(allocator: std.mem.Allocator, card: Card, review_id: u32, stdout: @TypeOf(std.io.getStdOut().writer())) !void {
@@ -324,7 +330,8 @@ pub fn main() !void {
     // SECTION: sandbox, for testing small code snippets ======================
 
     if (sandbox_mode) {
-        const deck = try parseDeck(allocator, dummy_string);
+        print("{s}\n", .{dummy_deck});
+        const deck = try parseDeck(allocator, dummy_deck);
 
         for (deck) |item| {
             switch (item) {
@@ -359,7 +366,7 @@ pub fn main() !void {
                 // only write if file doesn't exist
                 error.FileNotFound => {
                     var buf = std.ArrayList(u8).init(allocator);
-                    try buf.appendSlice(dummy_string);
+                    try buf.appendSlice(dummy_deck);
                     const bytesWritten = try writeFile(init_cmd.filename, buf.items);
                     try stdout.print("Successfully wrote {d} bytes to {s}.\n", .{ bytesWritten, init_cmd.filename });
                     std.posix.exit(0);
