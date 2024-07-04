@@ -229,25 +229,27 @@ fn parseDeck(allocator: std.mem.Allocator, raw: []const u8) ![]Deck {
         const root = parsed.value.object;
         const typ = root.get("type").?.string;
         if (std.mem.eql(u8, typ, "card")) {
-            const front = root.get("front").?.string;
-            const back = root.get("back").?.string;
-            const card = Card{ .type = typ, .front = front, .back = back };
+            const tmp_front = root.get("front").?.string;
+            const tmp_back = root.get("back").?.string;
+
+            // i still dont understand why i have to dupe here
+            const front = try allocator.dupe(u8, tmp_front);
+            const back = try allocator.dupe(u8, tmp_back);
+            const card = Card{ .type = "card", .front = front, .back = back };
             try deck.append(Deck{ .card = card });
         } else if (std.mem.eql(u8, typ, "review")) {
             const id = root.get("id").?.integer;
             const difficulty_rating = root.get("difficulty_rating").?.integer;
             const timestamp = root.get("timestamp").?.integer;
-            const algo = root.get("algo").?.string;
+            const tmp_card_hash = root.get("card_hash").?.string;
+            const tmp_algo = root.get("algo").?.string;
 
-            const tmp = root.get("card_hash").?.string;
-            if (tmp.len != 16) {
-                return error.InvalidCardHashLength;
-            }
             var card_hash: [16]u8 = undefined;
-            @memcpy(&card_hash, tmp);
+            @memcpy(&card_hash, tmp_card_hash);
+            const algo = try allocator.dupe(u8, tmp_algo);
 
             const review = Review{
-                .type = typ,
+                .type = "review",
                 .id = @intCast(id),
                 .card_hash = card_hash,
                 .difficulty_rating = @intCast(difficulty_rating),
@@ -327,9 +329,16 @@ pub fn main() !void {
         for (deck) |item| {
             switch (item) {
                 .card => |card| {
+                    print("{s}\n", .{card.type});
                     print("{s}\n", .{card.front});
+                    print("{s}\n", .{card.back});
                 },
                 .review => |review| {
+                    print("{s}\n", .{review.type});
+                    print("{d}\n", .{review.id});
+                    print("{d}\n", .{review.difficulty_rating});
+                    print("{d}\n", .{review.timestamp});
+                    print("{s}\n", .{review.algo});
                     print("{s}\n", .{review.card_hash});
                 },
             }
