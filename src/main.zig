@@ -76,7 +76,6 @@ const Card = struct {
     type: []const u8 = "card",
     front: []const u8,
     back: []const u8,
-    nextReview: u32 = undefined,
 
     // card_hash is card id - slice(sha256(stringify(card)), 0, 8)
     // 8 byte, 16 hex chars
@@ -320,54 +319,54 @@ test parseDeck {
     try expect(deck.len == dummy_cards.len + dummy_reviews.len);
 }
 
-// fn reviewCard(allocator: std.mem.Allocator, card: Card, review_id: u32, stdout: @TypeOf(std.io.getStdOut().writer())) !void {
-//     const MAX_WIDTH = 60;
-//     const wrapped_front = try wrapText(allocator, card.front, MAX_WIDTH);
-//     const wrapped_back = try wrapText(allocator, card.back, MAX_WIDTH);
-//
-//     try stdout.writeAll("\n\n");
-//     try stdout.writeByteNTimes('=', MAX_WIDTH);
-//     try stdout.writeAll("\n");
-//     try stdout.print("Q: {s}\n", .{wrapped_front});
-//     try stdout.writeByteNTimes('-', MAX_WIDTH);
-//
-//     var buffer: [1]u8 = undefined;
-//     _ = try std.io.getStdIn().read(&buffer);
-//
-//     try stdout.print("A: {s}\n", .{wrapped_back});
-//     try stdout.writeByteNTimes('=', MAX_WIDTH);
-//
-//     while (true) {
-//         try stdout.writeAll("\n");
-//         try stdout.writeAll(
-//             \\(0) Blackout
-//             \\(1) Wrong, hard
-//             \\(2) Wrong, need hint
-//             \\(3) Correct, hard recall
-//             \\(4) Correct, easy recall
-//             \\(5) Correct, instant recall
-//             \\Your rating:
-//         );
-//
-//         var input_buffer = std.ArrayList(u8).init(allocator);
-//         var input_reader = std.io.getStdIn().reader();
-//         try input_reader.streamUntilDelimiter(input_buffer.writer(), '\n', 2);
-//         const input = input_buffer.items;
-//         const difficulty_rating = std.fmt.parseInt(u8, input, 10) catch continue;
-//
-//         if (difficulty_rating > 5) continue;
-//         const review = Review{
-//             .id = review_id,
-//             .type = "review",
-//             .card = @constCast(&card),
-//             .difficulty_rating = difficulty_rating,
-//             .timestamp = @intCast(std.time.timestamp()),
-//             .algo = SRSAlgo.sm2,
-//         };
-//         print("review: {any}\n", .{review});
-//         break;
-//     }
-// }
+fn reviewCard(allocator: std.mem.Allocator, stdout: @TypeOf(std.io.getStdOut().writer()), card: Card) !void {
+    const MAX_WIDTH = 60;
+    const wrapped_front = try wrapText(allocator, card.front, MAX_WIDTH);
+    const wrapped_back = try wrapText(allocator, card.back, MAX_WIDTH);
+
+    try stdout.writeAll("\n\n");
+    try stdout.writeByteNTimes('=', MAX_WIDTH);
+    try stdout.writeAll("\n");
+    try stdout.print("Q: {s}\n", .{wrapped_front});
+    try stdout.writeByteNTimes('-', MAX_WIDTH);
+
+    var buffer: [1]u8 = undefined;
+    _ = try std.io.getStdIn().read(&buffer);
+
+    try stdout.print("A: {s}\n", .{wrapped_back});
+    try stdout.writeByteNTimes('=', MAX_WIDTH);
+
+    while (true) {
+        try stdout.writeAll("\n");
+        try stdout.writeAll(
+            \\(0) Blackout
+            \\(1) Wrong, hard
+            \\(2) Wrong, need hint
+            \\(3) Correct, hard recall
+            \\(4) Correct, easy recall
+            \\(5) Correct, instant recall
+            \\Your rating:
+        );
+
+        var input_buffer = std.ArrayList(u8).init(allocator);
+        var input_reader = std.io.getStdIn().reader();
+        try input_reader.streamUntilDelimiter(input_buffer.writer(), '\n', 2);
+        const input = input_buffer.items;
+        const difficulty_rating = std.fmt.parseInt(u8, input, 10) catch continue;
+
+        if (difficulty_rating > 5) continue;
+        // const review = Review{
+        //     .id = review_id,
+        //     .type = "review",
+        //     .card = @constCast(&card),
+        //     .difficulty_rating = difficulty_rating,
+        //     .timestamp = @intCast(std.time.timestamp()),
+        //     .algo = SRSAlgo.sm2,
+        // };
+        // print("review: {any}\n", .{review});
+        break;
+    }
+}
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -381,42 +380,6 @@ pub fn main() !void {
 
     const sandbox_mode = env_map.get("SANDBOX") != null and std.mem.eql(u8, env_map.get("SANDBOX").?, "1");
     if (sandbox_mode) {
-        const deck = try parseDeck(allocator, dummy_deck);
-        var cardMap = std.AutoHashMap([16]u8, *const Card).init(allocator);
-        var reviewMap = std.AutoHashMap([16]u8, *ArrayList(Review)).init(allocator);
-
-        // first pass: fill the cards in reviewMap with new arraylist
-        // second pass: append reviews to the corresponding card
-        for (deck) |item| {
-            if (item == .card) {
-                const card = item.card;
-                const card_hash = try card.getHash(allocator);
-                print("{s}\n", .{card_hash});
-                const reviews = try allocator.create(ArrayList(Review));
-                reviews.* = ArrayList(Review).init(allocator);
-                try cardMap.put(card_hash, &card);
-                try reviewMap.put(card_hash, reviews);
-            }
-        }
-        for (deck) |item| {
-            if (item == .review) {
-                const review = item.review;
-                if (reviewMap.get(review.card_hash)) |reviews| {
-                    try reviews.append(review);
-                } else {
-                    // Handle error: review for non-existent card
-                    std.debug.print("Error: Review for non-existent card\n", .{});
-                    continue;
-                }
-            }
-        }
-
-        const test_hash: [16]u8 = "f293baf387c5c190".*;
-        const test_card = cardMap.get(test_hash);
-        const test_reviews = reviewMap.get(test_hash);
-        const nextReview = test_card.?.getNextReview(test_reviews.?);
-        print("{d}\n", .{nextReview});
-
         std.posix.exit(0);
     }
 
@@ -444,25 +407,47 @@ pub fn main() !void {
             cli.fatal("file already exists, choose a different filename or delete the existing file", .{});
         },
         .review => |review_cmd| {
-            // const deck_raw = try readFile(allocator, review_cmd.filename);
-            // const deck = try parseDeck(allocator, deck_raw);
-            // const review_hashmap = std.hash_map.StringHashMap(*Review).init(allocator);
-            // for (deck) |item| {
-            //     switch (item) {
-            //         .card => |card| {
-            //             _ = card;
-            //             continue;
-            //         },
-            //         .review => |review| {
-            //             review_hashmap.put(review.card_hash, &review);
-            //         },
-            //     }
-            // }
-            //
-            // print("{any}\n", .{review_hashmap});
+            const deck_raw = try readFile(allocator, review_cmd.filename);
+            const deck = try parseDeck(allocator, deck_raw);
+            var cardMap = std.AutoHashMap([16]u8, Card).init(allocator);
+            var reviewMap = std.AutoHashMap([16]u8, ArrayList(Review)).init(allocator);
 
-            _ = review_cmd;
-            try stdout.print("\nyou have finished reviewing all the flashcards.\n", .{});
+            // first pass: fill the cards in reviewMap with new arraylist
+            // second pass: append reviews to the corresponding card
+            // "why not only do second pass" bc card without review is valid card
+            for (deck) |item| {
+                if (item == .card) {
+                    const card = item.card;
+                    const card_hash = try card.getHash(allocator);
+                    print("{s}\n", .{card_hash});
+                    try cardMap.put(card_hash, card);
+                    try reviewMap.put(card_hash, ArrayList(Review).init(allocator));
+                }
+            }
+            for (deck) |item| {
+                if (item == .review) {
+                    const review = item.review;
+                    if (reviewMap.getPtr(review.card_hash)) |reviews_ptr| {
+                        try reviews_ptr.append(review);
+                    } else {
+                        // Handle error: review for non-existent card
+                        std.debug.print("Error: Review for non-existent card\n", .{});
+                        continue;
+                    }
+                }
+            }
+
+            var it = cardMap.iterator();
+            while (it.next()) |kv| {
+                const card_hash = kv.key_ptr.*;
+                const card = kv.value_ptr.*;
+                const reviews = reviewMap.getPtr(card_hash).?;
+                if (card.getNextReview(reviews) <= std.time.timestamp()) {
+                    try reviewCard(allocator, stdout, card);
+                }
+            }
+
+            try stdout.print("\nyou have finished reviewing all the flashcards\n", .{});
         },
         .version => {
             try std.io.getStdOut().writeAll("ankiterm 0.0.0\n");
