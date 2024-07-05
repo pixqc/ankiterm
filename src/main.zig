@@ -97,13 +97,49 @@ const Card = struct {
     }
 
     // hash and next review should be lazy
-    fn getNextReview(self: Card, reviews: *ArrayList(Review)) u32 {
-        // TODO: sm2 here
+    fn getNextReview(self: Card, reviews: *ArrayList(Review)) i64 {
         _ = self;
+        const minEaseFactor = 1.3;
+        var frequency: u32 = 0;
+        var lastReview: i64 = 0;
+        var ease: f32 = 2.5; // initial ease: 2.5
+        var nextReview: i64 = 0;
+
         for (reviews.items) |review| {
-            print("{d}\n", .{review.timestamp});
+            frequency += 1;
+            if (review.timestamp > lastReview) {
+                lastReview = review.timestamp;
+            }
+
+            switch (review.difficulty_rating) {
+                0 => ease -= 0.8,
+                1 => ease -= 0.5,
+                2 => ease -= 0.3,
+                3 => ease += 0.1,
+                4 => ease += 0.15,
+                5 => ease += 0.2,
+                else => unreachable,
+            }
+
+            if (review.difficulty_rating < 3) {
+                frequency = 0;
+            }
         }
-        return 0;
+        ease = @max(minEaseFactor, ease);
+
+        const now = std.time.timestamp();
+        if (frequency == 0) {
+            return now;
+        } else if (frequency == 1) {
+            nextReview = 1 * 24 * 60 * 60; // 1 day in seconds
+        } else if (frequency == 2) {
+            nextReview = 6 * 24 * 60 * 60; // 6 days in seconds
+        } else {
+            const prevInterval: f32 = @floatFromInt(now - lastReview);
+            nextReview = @intFromFloat(prevInterval * ease);
+        }
+
+        return lastReview + nextReview;
     }
 
     fn toStringComptime(comptime self: Card) []const u8 {
@@ -123,7 +159,7 @@ const Review = struct {
     id: u32,
     card_hash: [16]u8,
     difficulty_rating: u8,
-    timestamp: u32, // unix second
+    timestamp: i64, // unix second, i64 just to follow zig's default type
     algo: []const u8 = "sm2", // can add more algorithms later
 
     fn toStringComptime(self: Review) []const u8 {
@@ -378,7 +414,8 @@ pub fn main() !void {
         const test_hash: [16]u8 = "f293baf387c5c190".*;
         const test_card = cardMap.get(test_hash);
         const test_reviews = reviewMap.get(test_hash);
-        _ = test_card.?.getNextReview(test_reviews.?);
+        const nextReview = test_card.?.getNextReview(test_reviews.?);
+        print("{d}\n", .{nextReview});
 
         std.posix.exit(0);
     }
