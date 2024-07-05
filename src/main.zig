@@ -146,11 +146,6 @@ const Review = struct {
     }
 };
 
-const DeckMap = struct {
-    card: *Card,
-    reviews: *ArrayList(Review),
-};
-
 const Deck = union(enum) {
     card: Card,
     review: Review,
@@ -343,28 +338,40 @@ pub fn main() !void {
 
     var env_map = try std.process.getEnvMap(allocator);
 
-    const sandbox_mode = env_map.get("SANDBOX") != null and std.mem.eql(u8, env_map.get("SANDBOX").?, "1");
-
     // SECTION: sandbox, for testing small code snippets ======================
 
+    const sandbox_mode = env_map.get("SANDBOX") != null and std.mem.eql(u8, env_map.get("SANDBOX").?, "1");
     if (sandbox_mode) {
-        print("{s}\n", .{dummy_deck});
         const deck = try parseDeck(allocator, dummy_deck);
-        print("{any}", .{deck});
+        var deckMap = std.AutoHashMap([16]u8, *ArrayList(Review)).init(allocator);
 
-        var card_map = std.AutoHashMap([16]u8, *const Card).init(allocator);
+        // first pass: fill the cards in deckmap with new arraylist
+        // second pass: append reviews to the corresponding card
         for (deck) |item| {
-            switch (item) {
-                .card => |card| {
-                    const card_hash = try card.getHash(allocator);
-                    try card_map.put(card_hash, &card);
-                },
-                .review => |review| {
-                    _ = review;
-                    continue;
-                },
+            if (item == .card) {
+                const card = &item.card;
+                const card_hash = try card.getHash(allocator);
+                print("{s}\n", .{card_hash});
+                const reviews = try allocator.create(ArrayList(Review));
+                reviews.* = ArrayList(Review).init(allocator);
+                try deckMap.put(card_hash, reviews);
             }
         }
+        for (deck) |item| {
+            if (item == .review) {
+                const review = item.review;
+                if (deckMap.get(review.card_hash)) |reviews| {
+                    try reviews.append(review);
+                } else {
+                    // Handle error: review for non-existent card
+                    std.debug.print("Error: Review for non-existent card\n", .{});
+                    continue;
+                }
+            }
+        }
+
+        // print("{any}\n", .{deckMap});
+        print("{any}\n", .{deckMap.get("f293baf387c5c190"[0..].*)});
 
         std.posix.exit(0);
     }
