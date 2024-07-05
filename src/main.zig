@@ -319,11 +319,12 @@ test parseDeck {
     try expect(deck.len == dummy_cards.len + dummy_reviews.len);
 }
 
-fn reviewCard(allocator: std.mem.Allocator, stdout: @TypeOf(std.io.getStdOut().writer()), card: Card) !void {
+fn reviewCard(allocator: std.mem.Allocator, card: Card) !u8 {
     const MAX_WIDTH = 60;
     const wrapped_front = try wrapText(allocator, card.front, MAX_WIDTH);
     const wrapped_back = try wrapText(allocator, card.back, MAX_WIDTH);
 
+    const stdout = std.io.getStdOut().writer();
     try stdout.writeAll("\n\n");
     try stdout.writeByteNTimes('=', MAX_WIDTH);
     try stdout.writeAll("\n");
@@ -345,7 +346,7 @@ fn reviewCard(allocator: std.mem.Allocator, stdout: @TypeOf(std.io.getStdOut().w
             \\(3) Correct, hard recall
             \\(4) Correct, easy recall
             \\(5) Correct, instant recall
-            \\Your rating:
+            \\Your rating: 
         );
 
         var input_buffer = std.ArrayList(u8).init(allocator);
@@ -355,16 +356,7 @@ fn reviewCard(allocator: std.mem.Allocator, stdout: @TypeOf(std.io.getStdOut().w
         const difficulty_rating = std.fmt.parseInt(u8, input, 10) catch continue;
 
         if (difficulty_rating > 5) continue;
-        // const review = Review{
-        //     .id = review_id,
-        //     .type = "review",
-        //     .card = @constCast(&card),
-        //     .difficulty_rating = difficulty_rating,
-        //     .timestamp = @intCast(std.time.timestamp()),
-        //     .algo = SRSAlgo.sm2,
-        // };
-        // print("review: {any}\n", .{review});
-        break;
+        return difficulty_rating;
     }
 }
 
@@ -372,7 +364,6 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-    const stdout = std.io.getStdOut().writer();
 
     var env_map = try std.process.getEnvMap(allocator);
 
@@ -398,6 +389,7 @@ pub fn main() !void {
                     var buf = std.ArrayList(u8).init(allocator);
                     try buf.appendSlice(dummy_deck);
                     const bytesWritten = try writeFile(init_cmd.filename, buf.items);
+                    const stdout = std.io.getStdOut().writer();
                     try stdout.print("Successfully wrote {d} bytes to {s}.\n", .{ bytesWritten, init_cmd.filename });
                     std.posix.exit(0);
                 },
@@ -411,6 +403,7 @@ pub fn main() !void {
             const deck = try parseDeck(allocator, deck_raw);
             var cardMap = std.AutoHashMap([16]u8, Card).init(allocator);
             var reviewMap = std.AutoHashMap([16]u8, ArrayList(Review)).init(allocator);
+            var max_review_id: u32 = 0;
 
             // first pass: fill the cards in reviewMap with new arraylist
             // second pass: append reviews to the corresponding card
@@ -427,6 +420,9 @@ pub fn main() !void {
             for (deck) |item| {
                 if (item == .review) {
                     const review = item.review;
+                    if (review.id > max_review_id) {
+                        max_review_id = review.id;
+                    }
                     if (reviewMap.getPtr(review.card_hash)) |reviews_ptr| {
                         try reviews_ptr.append(review);
                     } else {
@@ -443,10 +439,21 @@ pub fn main() !void {
                 const card = kv.value_ptr.*;
                 const reviews = reviewMap.getPtr(card_hash).?;
                 if (card.getNextReview(reviews) <= std.time.timestamp()) {
-                    try reviewCard(allocator, stdout, card);
+                    const difficulty_rating = try reviewCard(allocator, card);
+
+                    const review = Review{
+                        .id = max_review_id + 1,
+                        .type = "review",
+                        .card_hash = card_hash,
+                        .difficulty_rating = difficulty_rating,
+                        .timestamp = @intCast(std.time.timestamp()),
+                        .algo = "sm2",
+                    };
+                    print("review: {any}\n", .{review});
                 }
             }
 
+            const stdout = std.io.getStdOut().writer();
             try stdout.print("\nyou have finished reviewing all the flashcards\n", .{});
         },
         .version => {
