@@ -69,25 +69,27 @@ fn readFile(allocator: std.mem.Allocator, filename: []const u8) ![]u8 {
 // - review: a review of a card
 // - deck: a collection of cards and reviews
 
+const CARD_JSON_TMPL = "{{\"type\":\"card\",\"front\":\"{s}\",\"back\":\"{s}\"}}";
+const REVIEW_JSON_TMPL = "{{\"type\":\"review\",\"id\":{d},\"card_hash\":\"{s}\",\"difficulty_rating\":{d},\"timestamp\":{d},\"algo\":\"{s}\"}}";
+
 const Card = struct {
     type: []const u8 = "card",
     front: []const u8,
     back: []const u8,
-    tmpl: []const u8 = "{{\"type\":\"card\",\"front\":\"{s}\",\"back\":\"{s}\"}}",
 
     // card_hash is card id - slice(sha256(stringify(card)), 0, 8)
     // 8 byte, 16 hex chars
     // card id is stored in deck by review
     // everything deals in hex chars
-    fn getHash(self: Card) [16]u8 {
-        const card_str = self.toString();
+    fn getHashComptime(comptime self: Card) [16]u8 {
+        const card_str = self.toStringComptime();
         var card_hash: [32]u8 = undefined;
         hash.sha2.Sha256.hash(card_str, &card_hash, .{});
         return std.fmt.bytesToHex(card_hash[0..8], .lower);
     }
 
-    fn getHashAlloc(self: Card, allocator: std.mem.Allocator) ![16]u8 {
-        const card_str = try self.toStringAlloc(allocator);
+    fn getHash(self: Card, allocator: std.mem.Allocator) ![16]u8 {
+        const card_str = try self.toString(allocator);
         var card_hash: [32]u8 = undefined;
         hash.sha2.Sha256.hash(card_str, &card_hash, .{});
         return std.fmt.bytesToHex(card_hash[0..8], .lower);
@@ -101,12 +103,15 @@ const Card = struct {
         return 0;
     }
 
-    fn toString(self: Card) []const u8 {
-        return std.fmt.comptimePrint(self.tmpl, .{ self.front, self.back });
+    fn toStringComptime(comptime self: Card) []const u8 {
+        return std.fmt.comptimePrint(CARD_JSON_TMPL, .{ self.front, self.back });
     }
 
-    fn toStringAlloc(self: Card, allocator: std.mem.Allocator) ![]u8 {
-        return std.fmt.allocPrint(allocator, self.tmpl, .{ self.front, self.back });
+    fn toString(self: Card, allocator: std.mem.Allocator) ![]const u8 {
+        var buf = ArrayList(u8).init(allocator);
+        defer buf.deinit();
+        try std.fmt.format(buf.writer(), CARD_JSON_TMPL, .{ self.front, self.back });
+        return buf.toOwnedSlice();
     }
 };
 
@@ -117,10 +122,9 @@ const Review = struct {
     difficulty_rating: u8,
     timestamp: u32, // unix second
     algo: []const u8 = "sm2", // can add more algorithms later
-    tmpl: []const u8 = "{{\"type\":\"review\",\"id\":{d},\"card_hash\":\"{s}\",\"difficulty_rating\":{d},\"timestamp\":{d},\"algo\":\"{s}\"}}",
 
-    fn toString(self: Review) []const u8 {
-        return std.fmt.comptimePrint(self.tmpl, .{
+    fn toStringComptime(self: Review) []const u8 {
+        return std.fmt.comptimePrint(REVIEW_JSON_TMPL, .{
             self.id,
             self.card_hash,
             self.difficulty_rating,
@@ -129,9 +133,22 @@ const Review = struct {
         });
     }
 
-    fn toStringAlloc(self: Review, allocator: std.mem.Allocator) ![]u8 {
-        return std.fmt.allocPrint(allocator, self.tmpl, .{ self.id, self.card_hash, self.difficulty_rating, self.timestamp, self.algo });
+    fn toString(self: Review, allocator: std.mem.Allocator) ![]u8 {
+        var buf = ArrayList(u8).init(allocator);
+        const result = std.fmt.bufPrint(&buf, REVIEW_JSON_TMPL, .{
+            self.id,
+            self.card_hash,
+            self.difficulty_rating,
+            self.timestamp,
+            self.algo,
+        });
+        return allocator.dupe(u8, result);
     }
+};
+
+const DeckMap = struct {
+    card: *Card,
+    reviews: *ArrayList(Review),
 };
 
 const Deck = union(enum) {
@@ -156,41 +173,41 @@ const dummy_cards = [_]Card{
 };
 
 const dummy_reviews = blk: {
-    @setEvalBranchQuota(10000); // so the comptime getHash works
+    @setEvalBranchQuota(10000); // so the getHashComptime works
     const reviews = [_]Review{
         .{
             .id = 1,
-            .card_hash = dummy_cards[0].getHash(),
+            .card_hash = dummy_cards[0].getHashComptime(),
             .difficulty_rating = 5,
             .timestamp = 1718949322,
         },
         .{
             .id = 2,
-            .card_hash = dummy_cards[1].getHash(),
+            .card_hash = dummy_cards[1].getHashComptime(),
             .difficulty_rating = 0,
             .timestamp = 1718949322,
         },
         .{
             .id = 3,
-            .card_hash = dummy_cards[2].getHash(),
+            .card_hash = dummy_cards[2].getHashComptime(),
             .difficulty_rating = 1,
             .timestamp = 1718949322,
         },
         .{
             .id = 4,
-            .card_hash = dummy_cards[0].getHash(),
+            .card_hash = dummy_cards[0].getHashComptime(),
             .difficulty_rating = 3,
             .timestamp = 1718949322,
         },
         .{
             .id = 5,
-            .card_hash = dummy_cards[1].getHash(),
+            .card_hash = dummy_cards[1].getHashComptime(),
             .difficulty_rating = 2,
             .timestamp = 1718949322,
         },
         .{
             .id = 6,
-            .card_hash = dummy_cards[2].getHash(),
+            .card_hash = dummy_cards[2].getHashComptime(),
             .difficulty_rating = 5,
             .timestamp = 1718949322,
         },
@@ -201,16 +218,17 @@ const dummy_reviews = blk: {
 const dummy_deck = blk: {
     var result: []const u8 = "";
     for (dummy_cards) |card| {
-        result = result ++ card.toString() ++ "\n";
+        result = result ++ card.toStringComptime() ++ "\n";
     }
     for (dummy_reviews) |review| {
-        result = result ++ review.toString() ++ "\n";
+        result = result ++ review.toStringComptime() ++ "\n";
     }
     break :blk result;
 };
 
 fn parseDeck(allocator: std.mem.Allocator, raw: []const u8) ![]Deck {
     var deck = std.ArrayList(Deck).init(allocator);
+
     var lines = std.mem.split(u8, raw, "\n");
     while (lines.next()) |line| {
         if (line.len == 0) {
@@ -332,24 +350,22 @@ pub fn main() !void {
     if (sandbox_mode) {
         print("{s}\n", .{dummy_deck});
         const deck = try parseDeck(allocator, dummy_deck);
+        print("{any}", .{deck});
 
+        var card_map = std.AutoHashMap([16]u8, *const Card).init(allocator);
         for (deck) |item| {
             switch (item) {
                 .card => |card| {
-                    print("{s}\n", .{card.type});
-                    print("{s}\n", .{card.front});
-                    print("{s}\n", .{card.back});
+                    const card_hash = try card.getHash(allocator);
+                    try card_map.put(card_hash, &card);
                 },
                 .review => |review| {
-                    print("{s}\n", .{review.type});
-                    print("{d}\n", .{review.id});
-                    print("{d}\n", .{review.difficulty_rating});
-                    print("{d}\n", .{review.timestamp});
-                    print("{s}\n", .{review.algo});
-                    print("{s}\n", .{review.card_hash});
+                    _ = review;
+                    continue;
                 },
             }
         }
+
         std.posix.exit(0);
     }
 
@@ -377,16 +393,23 @@ pub fn main() !void {
             cli.fatal("file already exists, choose a different filename or delete the existing file", .{});
         },
         .review => |review_cmd| {
-            // const deck = try readFile(allocator, review_cmd.filename);
-            // var cards = ArrayList(Card).init(allocator);
-            // var reviews = ArrayList(Review).init(allocator);
-            // try parseDeck(allocator, &cards, &reviews, deck);
-            // // assumes review is not altered by user, autoinc u32
-            // var review_id: u32 = @intCast(reviews.items.len + 1);
-            // for (cards.items) |card| {
-            //     try reviewCard(allocator, card, review_id, stdout);
-            //     review_id += 1;
+            // const deck_raw = try readFile(allocator, review_cmd.filename);
+            // const deck = try parseDeck(allocator, deck_raw);
+            // const review_hashmap = std.hash_map.StringHashMap(*Review).init(allocator);
+            // for (deck) |item| {
+            //     switch (item) {
+            //         .card => |card| {
+            //             _ = card;
+            //             continue;
+            //         },
+            //         .review => |review| {
+            //             review_hashmap.put(review.card_hash, &review);
+            //         },
+            //     }
             // }
+            //
+            // print("{any}\n", .{review_hashmap});
+
             _ = review_cmd;
             try stdout.print("\nyou have finished reviewing all the flashcards.\n", .{});
         },
@@ -418,3 +441,35 @@ pub fn main() !void {
 //     const cwd = std.fs.cwd();
 //     try cwd.deleteFile(filename);
 // }
+//
+
+// for testing small code snippets
+test "sandbox" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    print("{s}\n", .{dummy_deck});
+    const deck = try parseDeck(allocator, dummy_deck);
+    var my_map = std.hash_map.StringHashMap(i32).init(allocator);
+    print("{any}\n", .{my_map});
+
+    var idx: i32 = 0;
+    for (deck) |item| {
+        switch (item) {
+            .card => |card| {
+                _ = card;
+                continue;
+            },
+            .review => |review| {
+                try my_map.put(&review.card_hash, idx);
+                idx += 1;
+            },
+        }
+    }
+    print("{any}\n", .{my_map});
+    print("{d}\n", .{my_map.count()});
+    print("{any}\n", .{my_map.get("f293baf387c5c190")});
+
+    std.posix.exit(0);
+}
