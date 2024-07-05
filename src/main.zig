@@ -76,6 +76,7 @@ const Card = struct {
     type: []const u8 = "card",
     front: []const u8,
     back: []const u8,
+    nextReview: u32 = undefined,
 
     // card_hash is card id - slice(sha256(stringify(card)), 0, 8)
     // 8 byte, 16 hex chars
@@ -98,8 +99,10 @@ const Card = struct {
     // hash and next review should be lazy
     fn getNextReview(self: Card, reviews: *ArrayList(Review)) u32 {
         // TODO: sm2 here
-        _ = reviews;
         _ = self;
+        for (reviews.items) |review| {
+            print("{d}\n", .{review.timestamp});
+        }
         return 0;
     }
 
@@ -343,24 +346,26 @@ pub fn main() !void {
     const sandbox_mode = env_map.get("SANDBOX") != null and std.mem.eql(u8, env_map.get("SANDBOX").?, "1");
     if (sandbox_mode) {
         const deck = try parseDeck(allocator, dummy_deck);
-        var deckMap = std.AutoHashMap([16]u8, *ArrayList(Review)).init(allocator);
+        var cardMap = std.AutoHashMap([16]u8, *const Card).init(allocator);
+        var reviewMap = std.AutoHashMap([16]u8, *ArrayList(Review)).init(allocator);
 
-        // first pass: fill the cards in deckmap with new arraylist
+        // first pass: fill the cards in reviewMap with new arraylist
         // second pass: append reviews to the corresponding card
         for (deck) |item| {
             if (item == .card) {
-                const card = &item.card;
+                const card = item.card;
                 const card_hash = try card.getHash(allocator);
                 print("{s}\n", .{card_hash});
                 const reviews = try allocator.create(ArrayList(Review));
                 reviews.* = ArrayList(Review).init(allocator);
-                try deckMap.put(card_hash, reviews);
+                try cardMap.put(card_hash, &card);
+                try reviewMap.put(card_hash, reviews);
             }
         }
         for (deck) |item| {
             if (item == .review) {
                 const review = item.review;
-                if (deckMap.get(review.card_hash)) |reviews| {
+                if (reviewMap.get(review.card_hash)) |reviews| {
                     try reviews.append(review);
                 } else {
                     // Handle error: review for non-existent card
@@ -370,8 +375,10 @@ pub fn main() !void {
             }
         }
 
-        // print("{any}\n", .{deckMap});
-        print("{any}\n", .{deckMap.get("f293baf387c5c190"[0..].*)});
+        const test_hash: [16]u8 = "f293baf387c5c190".*;
+        const test_card = cardMap.get(test_hash);
+        const test_reviews = reviewMap.get(test_hash);
+        _ = test_card.?.getNextReview(test_reviews.?);
 
         std.posix.exit(0);
     }
